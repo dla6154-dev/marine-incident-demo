@@ -116,6 +116,7 @@ from nearest_island import (
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 ROOT_DIR = pathlib.Path(__file__).resolve().parent
+IS_RAILWAY = bool(os.getenv("RAILWAY_PUBLIC_DOMAIN") or os.getenv("RAILWAY_ENVIRONMENT"))
 VWORLD_API_KEY = os.getenv(
     "VWORLD_API_KEY", "9ACC81DD-8F5F-335A-B8C0-04190CEEF1C1"
 )
@@ -175,44 +176,59 @@ def set_cached_wfs(lat: float, lng: float, island_type: str, features: list) -> 
         print(f"[wfs-cache] disk write failed: {exc}")
 
 
+def _load_bundle(filename: str) -> list[dict]:
+    return json.loads((ROOT_DIR / "data" / filename).read_text(encoding="utf-8"))
+
+
 def get_fire_stations() -> list[dict]:
     global FIRE_STATION_CACHE
     if FIRE_STATION_CACHE is None:
-        FIRE_STATION_CACHE = fetch_fire_stations(SAFEMAP_SERVICE_KEY)
+        if IS_RAILWAY:
+            FIRE_STATION_CACHE = _load_bundle("fire_stations.json")
+        else:
+            FIRE_STATION_CACHE = fetch_fire_stations(SAFEMAP_SERVICE_KEY)
     return FIRE_STATION_CACHE
 
 
 def get_health_centers() -> list[dict]:
     global HEALTH_CENTER_CACHE
     if HEALTH_CENTER_CACHE is None:
-        HEALTH_CENTER_CACHE = fetch_health_centers(SAFEMAP_SERVICE_KEY)
+        if IS_RAILWAY:
+            HEALTH_CENTER_CACHE = _load_bundle("health_centers.json")
+        else:
+            HEALTH_CENTER_CACHE = fetch_health_centers(SAFEMAP_SERVICE_KEY)
     return HEALTH_CENTER_CACHE
 
 
 def get_hospitals() -> list[dict]:
     global HOSPITAL_CACHE
     if HOSPITAL_CACHE is None:
-        HOSPITAL_CACHE = fetch_hospitals(SAFEMAP_SERVICE_KEY)
+        if IS_RAILWAY:
+            HOSPITAL_CACHE = _load_bundle("hospitals.json")
+        else:
+            HOSPITAL_CACHE = fetch_hospitals(SAFEMAP_SERVICE_KEY)
     return HOSPITAL_CACHE
 
 
 def get_kcg_stations() -> list[dict]:
     global KCG_STATION_CACHE
     if KCG_STATION_CACHE is None:
-        stations = fetch_kcg_stations()
-        # 출장소 병합 (fetch_kcg_stations 내부에서 실패했을 경우 서버에서 재시도)
-        if not any("출장소" in s.get("name", "") for s in stations):
-            try:
-                branches = _fetch_from_url(API_BRANCH_URL, DEFAULT_KCG_SERVICE_KEY)
-                existing = {s["id"] for s in stations}
-                for b in branches:
-                    if b["id"] not in existing:
-                        stations.append(b)
-                        existing.add(b["id"])
-                print(f"[kcg-stations] 출장소 {len(branches)}개 병합 완료, 총 {len(stations)}개")
-            except Exception as exc:
-                print(f"[kcg-stations] 출장소 병합 실패: {exc}")
-        KCG_STATION_CACHE = stations
+        if IS_RAILWAY:
+            KCG_STATION_CACHE = _load_bundle("kcg_stations.json")
+        else:
+            stations = fetch_kcg_stations()
+            if not any("출장소" in s.get("name", "") for s in stations):
+                try:
+                    branches = _fetch_from_url(API_BRANCH_URL, DEFAULT_KCG_SERVICE_KEY)
+                    existing = {s["id"] for s in stations}
+                    for b in branches:
+                        if b["id"] not in existing:
+                            stations.append(b)
+                            existing.add(b["id"])
+                    print(f"[kcg-stations] 출장소 {len(branches)}개 병합 완료, 총 {len(stations)}개")
+                except Exception as exc:
+                    print(f"[kcg-stations] 출장소 병합 실패: {exc}")
+            KCG_STATION_CACHE = stations
     return KCG_STATION_CACHE
 
 
@@ -316,40 +332,52 @@ def _parse_buoy(text: str, stn: str) -> dict | None:
 
 
 def _fetch_open_meteo(lat: float, lng: float) -> dict | None:
-    """Open-Meteo API로 기상+해양 데이터 조회 (KMA 접근 불가 시 fallback)."""
+    """Open-Meteo API로 기상+해양 데이터 조회 — 대기/해양 병렬 호출."""
     import ssl
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
 
-    wd = ws = ta = wh = None
-    try:
-        atmos_url = (
-            f"https://api.open-meteo.com/v1/forecast?"
-            f"latitude={lat}&longitude={lng}"
-            f"&current=wind_speed_10m,wind_direction_10m,temperature_2m"
-            f"&wind_speed_unit=ms&timezone=Asia%2FSeoul"
-        )
-        req = urllib.request.Request(atmos_url, headers={"User-Agent": "marine-incident-demo/1.0"})
-        with urllib.request.urlopen(req, timeout=10, context=ctx) as r:
-            cur = json.loads(r.read()).get("current", {})
-        wd = cur.get("wind_direction_10m")
-        ws = cur.get("wind_speed_10m")
-        ta = cur.get("temperature_2m")
-    except Exception as exc:
-        print(f"[open-meteo] atmos error: {exc}")
+    atmos_url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={lat}&longitude={lng}"
+        f"&current=wind_speed_10m,wind_direction_10m,temperature_2m"
+        f"&wind_speed_unit=ms&timezone=Asia%2FSeoul"
+    )
+    marine_url = (
+        f"https://marine-api.open-meteo.com/v1/marine?"
+        f"latitude={lat}&longitude={lng}"
+        f"&current=wave_height&timezone=Asia%2FSeoul"
+    )
 
-    try:
-        marine_url = (
-            f"https://marine-api.open-meteo.com/v1/marine?"
-            f"latitude={lat}&longitude={lng}"
-            f"&current=wave_height&timezone=Asia%2FSeoul"
-        )
-        req = urllib.request.Request(marine_url, headers={"User-Agent": "marine-incident-demo/1.0"})
-        with urllib.request.urlopen(req, timeout=10, context=ctx) as r:
-            wh = json.loads(r.read()).get("current", {}).get("wave_height")
-    except Exception as exc:
-        print(f"[open-meteo] marine error: {exc}")
+    atmos_result: dict = {}
+    marine_result: dict = {}
+
+    def _fetch_atmos():
+        try:
+            req = urllib.request.Request(atmos_url, headers={"User-Agent": "marine-incident-demo/1.0"})
+            with urllib.request.urlopen(req, timeout=8, context=ctx) as r:
+                atmos_result.update(json.loads(r.read()).get("current", {}))
+        except Exception as exc:
+            print(f"[open-meteo] atmos error: {exc}")
+
+    def _fetch_marine():
+        try:
+            req = urllib.request.Request(marine_url, headers={"User-Agent": "marine-incident-demo/1.0"})
+            with urllib.request.urlopen(req, timeout=8, context=ctx) as r:
+                marine_result.update(json.loads(r.read()).get("current", {}))
+        except Exception as exc:
+            print(f"[open-meteo] marine error: {exc}")
+
+    t1 = threading.Thread(target=_fetch_atmos)
+    t2 = threading.Thread(target=_fetch_marine)
+    t1.start(); t2.start()
+    t1.join(); t2.join()
+
+    wd = atmos_result.get("wind_direction_10m")
+    ws = atmos_result.get("wind_speed_10m")
+    ta = atmos_result.get("temperature_2m")
+    wh = marine_result.get("wave_height")
 
     if wd is None and ws is None and wh is None:
         return None
@@ -841,22 +869,23 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
             tm = past.strftime("%Y%m%d%H%M")
 
         result = None
-        # 1순위: KMA API
-        try:
-            if stype == "buoy":
-                url = f"{KMA_APIHUB_BASE}/url/kma_buoy.php?tm={tm}&stn={stn}&help=1&authKey={KMA_AUTH_KEY}"
-                raw = _kma_fetch(url)
-                result = _parse_buoy(raw, stn)
-            elif stype == "aws":
-                url = f"{KMA_APIHUB_BASE}/cgi-bin/url/nph-aws2_min?tm2={tm}&stn={stn}&disp=1&help=1&authKey={KMA_AUTH_KEY}"
-                raw = _kma_fetch(url)
-                result = _parse_aws(raw, stn)
-            else:  # sea (해양종합)
-                url = f"{KMA_APIHUB_BASE}/url/sea_obs.php?tm={tm}&stn={stn}&help=1&authKey={KMA_AUTH_KEY}"
-                raw = _kma_fetch(url)
-                result = _parse_sea_obs(raw, stn)
-        except Exception as exc:
-            print(f"[kma] failed (stn={stn}): {exc}, trying Open-Meteo...")
+        # 1순위: KMA API — Railway 환경에서는 한국 IP 제한으로 스킵
+        if not IS_RAILWAY:
+            try:
+                if stype == "buoy":
+                    url = f"{KMA_APIHUB_BASE}/url/kma_buoy.php?tm={tm}&stn={stn}&help=1&authKey={KMA_AUTH_KEY}"
+                    raw = _kma_fetch(url)
+                    result = _parse_buoy(raw, stn)
+                elif stype == "aws":
+                    url = f"{KMA_APIHUB_BASE}/cgi-bin/url/nph-aws2_min?tm2={tm}&stn={stn}&disp=1&help=1&authKey={KMA_AUTH_KEY}"
+                    raw = _kma_fetch(url)
+                    result = _parse_aws(raw, stn)
+                else:  # sea (해양종합)
+                    url = f"{KMA_APIHUB_BASE}/url/sea_obs.php?tm={tm}&stn={stn}&help=1&authKey={KMA_AUTH_KEY}"
+                    raw = _kma_fetch(url)
+                    result = _parse_sea_obs(raw, stn)
+            except Exception as exc:
+                print(f"[kma] failed (stn={stn}): {exc}")
 
         # 2순위: Open-Meteo (KMA 접근 불가 환경 fallback)
         if result is None and lat_raw and lng_raw:
