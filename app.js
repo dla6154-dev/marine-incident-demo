@@ -3456,10 +3456,22 @@ function _wsConnect() {
     console.log("[ws] connected");
   };
 
+  let _viewerFirstState = IS_VIEW_MODE; // 뷰어 최초 상태 수신 플래그
   _ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
-      if (msg.type === "state" && msg.data) _wsApplyState(msg.data);
+      if (msg.type === "state" && msg.data) {
+        if (_viewerFirstState) {
+          // 뷰어 최초 수신: 좌표 변경 여부와 무관하게 runSearch 강제 실행
+          _viewerFirstState = false;
+          _wsApplyState(msg.data);
+          const lat = parseFloat(msg.data["lat-input"]);
+          const lng = parseFloat(msg.data["lng-input"]);
+          if (!isNaN(lat) && !isNaN(lng)) runSearch(lat, lng);
+        } else {
+          _wsApplyState(msg.data);
+        }
+      }
     } catch (_) {}
   };
 
@@ -3475,21 +3487,30 @@ function _wsConnect() {
 const IS_VIEW_MODE = new URLSearchParams(location.search).has("view");
 
 if (IS_VIEW_MODE) {
-  // body에 view-mode 클래스 → CSS로 폼 숨김, 지도 전체화면, 보고서 패널 표시
   document.body.classList.add("view-mode");
 
-  // 뷰어 배지 표시
   const badge = document.getElementById("viewer-badge");
   if (badge) badge.classList.remove("hidden");
 
-  // 보고서 패널 강제 펼치기
   document.addEventListener("DOMContentLoaded", () => {
+    // 보고서 패널 강제 펼치기
     const overlay = document.getElementById("report-preview-overlay");
     if (overlay) {
       overlay.classList.remove("hidden", "collapsed");
       const btn = document.getElementById("toggle-report-button");
       if (btn) btn.setAttribute("aria-expanded", "true");
     }
+    // CSS 레이아웃 변경 후 OpenLayers 지도 크기 재계산
+    const _fixMapSize = () => {
+      if (typeof map !== "undefined") {
+        map.updateSize();
+        map.renderSync();
+        window.dispatchEvent(new Event("resize"));
+      }
+    };
+    setTimeout(_fixMapSize, 50);
+    setTimeout(_fixMapSize, 300);
+    setTimeout(_fixMapSize, 800);
   });
 }
 
