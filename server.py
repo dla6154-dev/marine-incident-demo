@@ -370,6 +370,67 @@ def _fetch_open_meteo(lat: float, lng: float) -> dict | None:
     }
 
 
+_ISLANDS_CACHE: list[dict] | None = None
+
+def _get_islands_from_bundle() -> list[dict]:
+    global _ISLANDS_CACHE
+    if _ISLANDS_CACHE is None:
+        path = ROOT_DIR / "data" / "islands.json"
+        _ISLANDS_CACHE = json.loads(path.read_text(encoding="utf-8"))
+    return _ISLANDS_CACHE
+
+
+def _find_nearest_island_from_bundle(lat: float, lng: float, island_type_filter: str) -> dict | None:
+    """번들된 섬 데이터(data/islands.json)에서 가장 가까운 섬 검색."""
+    from nearest_island import (
+        haversine_nm, initial_bearing, bearing_to_direction,
+        format_distance_nm, ZERO_DISTANCE_NM,
+    )
+    islands = _get_islands_from_bundle()
+    best: dict | None = None
+    best_dist = float("inf")
+    for isl in islands:
+        if island_type_filter == "inhabited" and isl.get("type") != "유인도":
+            continue
+        if island_type_filter == "uninhabited" and isl.get("type") != "무인도":
+            continue
+        dist = haversine_nm(lat, lng, isl["lat"], isl["lng"])
+        if dist < best_dist:
+            best_dist = dist
+            best = isl
+
+    if best is None or best_dist > 120:  # 120nm 이상이면 무효
+        return None
+
+    name = best["name"]
+    ilat, ilng = best["lat"], best["lng"]
+    res: dict = {
+        "query_lat": lat,
+        "query_lng": lng,
+        "distance_nm": round(best_dist, 3),
+        "coastline_distance_nm": round(best_dist, 3),
+        "coastline_point": {"lat": round(ilat, 6), "lng": round(ilng, 6)},
+        "island": {
+            "island_id": best.get("id", ""),
+            "name": name,
+            "island_type": best.get("type", "도서"),
+            "location": best.get("location", ""),
+            "lat": round(ilat, 6),
+            "lng": round(ilng, 6),
+        },
+    }
+    if best_dist >= ZERO_DISTANCE_NM:
+        bearing = initial_bearing(ilat, ilng, lat, lng)
+        res["bearing_deg"] = round(bearing, 1)
+        res["direction"] = bearing_to_direction(bearing)
+        res["summary"] = f"{name} {res['direction']} {format_distance_nm(best_dist)}해리"
+    else:
+        res["bearing_deg"] = None
+        res["direction"] = None
+        res["summary"] = f"{name} {format_distance_nm(best_dist)}해리"
+    return res
+
+
 def _fetch_nearest_island_overpass(lat: float, lng: float, island_type_filter: str) -> dict | None:
     """Overpass API(OSM)로 주변 섬 검색 — VWorld 접근 불가 환경 fallback."""
     import ssl
@@ -633,16 +694,25 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
                 set_cached_wfs(lat, lng, island_type, wfs_features)
             result = find_nearest_island_wfs(wfs_features, lat, lng)
         except Exception as exc:
-            print(f"[wfs] VWorld failed ({exc}), trying Overpass...")
+            print(f"[wfs] VWorld failed ({exc}), trying bundle...")
 
-        # 2순위: Overpass API (Railway 등 해외 서버 fallback)
+        # 2순위: 번들 섬 데이터 (data/islands.json — Railway 환경 primary fallback)
+        if result is None:
+            try:
+                result = _find_nearest_island_from_bundle(lat, lng, island_type)
+                if result:
+                    print(f"[bundle] found: {result.get('island', {}).get('name')}")
+            except Exception as exc2:
+                print(f"[bundle] error: {exc2}")
+
+        # 3순위: Overpass API (최후 수단)
         if result is None:
             try:
                 result = _fetch_nearest_island_overpass(lat, lng, island_type)
                 if result:
                     print(f"[overpass] found: {result.get('island', {}).get('name')}")
-            except Exception as exc2:
-                print(f"[overpass] error: {exc2}")
+            except Exception as exc3:
+                print(f"[overpass] error: {exc3}")
 
         if result is None:
             self.send_json({"error": "주변 60NM 이내에 유인도가 없습니다."}, status=HTTPStatus.NOT_FOUND)
