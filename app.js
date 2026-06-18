@@ -728,6 +728,7 @@ document.addEventListener("click", (event) => {
 });
 
 map.on("click", (event) => {
+  if (IS_VIEW_MODE) return; // 뷰어는 클릭 좌표 등록 불가
   const [lng, lat] = ol.proj.toLonLat(event.coordinate);
   latInput.value = lat.toFixed(6);
   lngInput.value = lng.toFixed(6);
