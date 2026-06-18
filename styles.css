@@ -1183,6 +1183,90 @@ input.required-filled {
 .ws-dot.online  { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
 .ws-dot.offline { background: #ef4444; }
 
+/* ── 뷰어 모드 (?view) ────────────────────────────────────────────────────── */
+body.view-mode .app-shell .panel,
+body.view-mode .panel-toggle-btn,
+body.view-mode .map-toolbar {
+  display: none !important;
+}
+
+body.view-mode .app-shell {
+  flex-direction: row;
+}
+
+body.view-mode .app-shell .map-area {
+  flex: 1 1 0;
+  min-width: 0;
+  order: 1;
+}
+
+body.view-mode .map-stage {
+  height: 100vh;
+}
+
+/* 뷰어 모드: 보고서 패널 항상 표시, 오른쪽 고정 */
+body.view-mode #report-preview-overlay {
+  position: relative !important;
+  width: 360px !important;
+  min-width: 360px !important;
+  max-height: 100vh !important;
+  overflow-y: auto !important;
+  order: 2;
+  flex-shrink: 0;
+  display: flex !important;
+  flex-direction: column;
+  border-radius: 0 !important;
+  border-left: 1px solid rgba(255,255,255,0.08);
+  border-top: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+}
+
+body.view-mode #report-preview-overlay.hidden,
+body.view-mode #report-preview-overlay.collapsed {
+  display: flex !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+body.view-mode .report-preview-actions {
+  display: none !important;
+}
+
+body.view-mode .map-stage {
+  display: flex;
+  flex-direction: row;
+  height: 100vh;
+}
+
+body.view-mode #map {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100vh !important;
+}
+
+body.view-mode #map-result-overlay,
+body.view-mode #emergency-cards-overlay {
+  /* 뷰어에서도 지도 오버레이 카드는 그대로 표시 */
+}
+
+/* 뷰어 헤더 배지 */
+.viewer-badge {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: rgba(13,31,45,0.9);
+  border: 1px solid rgba(100,180,220,0.3);
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 12px;
+  color: #7dd8f0;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
 /* ── 선택 모달 (사고종류 / 추정원인) ─────────────────────────────────────── */
 .picker-field {
   position: relative;

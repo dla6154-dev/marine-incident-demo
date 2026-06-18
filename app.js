@@ -3471,13 +3471,37 @@ function _wsConnect() {
   _ws.onerror = () => _ws.close();
 }
 
-// 폼 필드 변경 시 브로드캐스트 등록
+// ── 뷰어 모드 (?view 파라미터) ───────────────────────────────────────────────
+const IS_VIEW_MODE = new URLSearchParams(location.search).has("view");
+
+if (IS_VIEW_MODE) {
+  // body에 view-mode 클래스 → CSS로 폼 숨김, 지도 전체화면, 보고서 패널 표시
+  document.body.classList.add("view-mode");
+
+  // 뷰어 배지 표시
+  const badge = document.getElementById("viewer-badge");
+  if (badge) badge.classList.remove("hidden");
+
+  // 보고서 패널 강제 펼치기
+  document.addEventListener("DOMContentLoaded", () => {
+    const overlay = document.getElementById("report-preview-overlay");
+    if (overlay) {
+      overlay.classList.remove("hidden", "collapsed");
+      const btn = document.getElementById("toggle-report-button");
+      if (btn) btn.setAttribute("aria-expanded", "true");
+    }
+  });
+}
+
+// 폼 필드 변경 시 브로드캐스트 등록 (뷰어 모드에서는 수신만)
 document.addEventListener("DOMContentLoaded", () => {
   _wsConnect();
-  for (const id of _WS_FIELDS) {
-    const el = document.getElementById(id);
-    if (!el) continue;
-    el.addEventListener("input", _wsBroadcast);
-    el.addEventListener("change", _wsBroadcast);
+  if (!IS_VIEW_MODE) {
+    for (const id of _WS_FIELDS) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.addEventListener("input", _wsBroadcast);
+      el.addEventListener("change", _wsBroadcast);
+    }
   }
 });
