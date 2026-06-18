@@ -2933,6 +2933,9 @@ operationRouteInput.addEventListener("focus", () => {
 
 operationRouteInput.addEventListener("blur", () => {
   setTimeout(() => routeSuggestionBox.classList.add("hidden"), 150);
+  // 직접 입력한 항로명으로도 출항지 목록 채우기
+  const name = operationRouteInput.value.trim();
+  if (name) populateDepartureSelect(name);
 });
 
 async function fetchRouteData() {
