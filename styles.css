@@ -1201,7 +1201,13 @@ body.view-mode .app-shell .map-area {
 
 body.view-mode .map-stage,
 body.view-mode #map {
+  width: 100% !important;
   height: 100vh !important;
+}
+
+body.view-mode .app-shell {
+  flex-direction: row !important;
+  width: calc(100vw - var(--viewer-panel-w)) !important;
 }
 
 /* 보고서 패널: 오른쪽 고정 */

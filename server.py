@@ -687,6 +687,26 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
                 ctype = ctype + "; charset=utf-8"
         return ctype
 
+    def do_POST(self) -> None:
+        parsed = urllib.parse.urlsplit(self.path)
+        if parsed.path == "/api/state":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length)
+                state = json.loads(body.decode("utf-8"))
+                global _ws_latest_state
+                _ws_latest_state = state
+                text = json.dumps({"type": "state", "data": state}, ensure_ascii=False)
+                _sse_broadcast(text)
+                print(f"[post] state received, sse clients={len(_sse_clients)}")
+                self.send_json({"ok": True})
+            except Exception as e:
+                print(f"[post] error: {e}")
+                self.send_json({"error": str(e)}, status=HTTPStatus.BAD_REQUEST)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
     def do_GET(self) -> None:
         # WebSocket 업그레이드 요청 처리
         if self.headers.get("Upgrade", "").lower() == "websocket":
@@ -695,6 +715,11 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlsplit(self.path)
         if parsed.path == "/api/sse":
             self.handle_sse()
+            return
+        if parsed.path == "/api/state":
+            # POST는 do_POST에서 처리, GET으로 잘못 들어오면 405
+            self.send_response(405)
+            self.end_headers()
             return
         if parsed.path == "/api/nearest":
             self.handle_nearest(parsed.query)

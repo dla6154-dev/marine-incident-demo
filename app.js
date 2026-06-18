@@ -3435,8 +3435,13 @@ function _wsApplyState(state) {
 }
 
 function _wsBroadcast() {
-  if (_wsSyncing || !_ws || _ws.readyState !== WebSocket.OPEN) return;
-  _ws.send(JSON.stringify({ type: "state", data: _wsCollectState() }));
+  if (_wsSyncing) return;
+  const state = _wsCollectState();
+  fetch("/api/state", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(state),
+  }).catch(() => {});
 }
 
 function _wsSetStatus(connected) {
@@ -3575,16 +3580,18 @@ document.addEventListener("DOMContentLoaded", () => {
   if (IS_VIEW_MODE) {
     // 뷰어: SSE로 수신
     _sseConnect();
+    _wsSetStatus(true); // 뷰어는 항상 "연결됨" 표시
   } else {
-    // 보고자: WS로 송수신
-    _wsConnect();
+    // 보고자: HTTP POST로 state 전송 (Railway WS 업스트림 차단 우회)
+    _wsSetStatus(true);
     for (const id of _WS_FIELDS) {
       const el = document.getElementById(id);
       if (!el) continue;
       el.addEventListener("input", _wsBroadcast);
       el.addEventListener("change", _wsBroadcast);
     }
-    // 30초마다 자동 재전송
+    // 30초마다 자동 재전송 + 초기 전송
+    setTimeout(_wsBroadcast, 500);
     setInterval(_wsBroadcast, 30000);
   }
 });
