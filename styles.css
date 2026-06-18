@@ -1184,7 +1184,7 @@ input.required-filled {
 .ws-dot.offline { background: #ef4444; }
 
 /* ── 뷰어 모드 (?view) ────────────────────────────────────────────────────── */
-:root { --viewer-panel-w: 380px; }
+:root { --viewer-panel-w: 460px; }
 
 body.view-mode .app-shell .panel,
 body.view-mode .panel-toggle-btn,

@@ -3428,9 +3428,8 @@ function _wsApplyState(state) {
   }
   _wsSyncing = false;
 
-  if (latChanged) {
-    const lat = parseFloat(newLat), lng = parseFloat(newLng);
-    if (!isNaN(lat) && !isNaN(lng)) runSearch(lat, lng);
+  if (latChanged && !IS_VIEW_MODE) {
+    runSearch();
   }
 }
 
@@ -3454,6 +3453,10 @@ function _wsConnect() {
   _ws.onopen = () => {
     _wsSetStatus(true);
     console.log("[ws] connected");
+    // 보고자 모드: 연결 즉시 현재 상태 전송 (뷰어가 받을 수 있도록)
+    if (!IS_VIEW_MODE) {
+      setTimeout(_wsBroadcast, 200);
+    }
   };
 
   let _viewerFirstState = IS_VIEW_MODE; // 뷰어 최초 상태 수신 플래그
@@ -3467,7 +3470,13 @@ function _wsConnect() {
           _wsApplyState(msg.data);
           const lat = parseFloat(msg.data["lat-input"]);
           const lng = parseFloat(msg.data["lng-input"]);
-          if (!isNaN(lat) && !isNaN(lng)) runSearch(lat, lng);
+          if (!isNaN(lat) && !isNaN(lng)) {
+            // 지도 크기 재계산(800ms) 완료 후 실행
+            setTimeout(() => {
+              if (typeof map !== "undefined") { map.updateSize(); map.renderSync(); }
+              runSearch();
+            }, 900);
+          }
         } else {
           _wsApplyState(msg.data);
         }
@@ -3524,5 +3533,7 @@ document.addEventListener("DOMContentLoaded", () => {
       el.addEventListener("input", _wsBroadcast);
       el.addEventListener("change", _wsBroadcast);
     }
+    // 30초마다 자동 재전송: 뷰어가 나중에 접속해도 최신 상태를 받을 수 있도록
+    setInterval(_wsBroadcast, 30000);
   }
 });
