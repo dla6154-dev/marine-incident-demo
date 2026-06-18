@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="200"
+     height="200"
+     viewBox="0 0 200 200">
+
+    <!-- 원 테두리 -->
+    <circle
+        cx="100"
+        cy="100"
+        r="85"
+        fill="white"
+        stroke="#007A33"
+        stroke-width="10"/>
+
+    <!-- 십자가 -->
+    <rect
+        x="85"
+        y="55"
+        width="30"
+        height="90"
+        fill="#007A33"/>
+
+    <rect
+        x="55"
+        y="85"
+        width="90"
+        height="30"
+        fill="#007A33"/>
+
+</svg>

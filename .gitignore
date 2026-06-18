@@ -10,6 +10,5 @@ server_*.log
 logo.ai
 symbol_*.ai
 *.png
-*.svg
 preview/
 

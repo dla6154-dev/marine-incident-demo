@@ -353,6 +353,11 @@ def build_vworld_query(
         merged.append(("key", VWORLD_API_KEY))
     if "domain" not in lowered:
         merged.append(("domain", VWORLD_DOMAIN))
+    # Railway 배포 시 실제 서비스 도메인으로 override
+    railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
+    if railway_domain:
+        merged = [(k, v) for k, v in merged if k != "domain"]
+        merged.append(("domain", railway_domain))
     return urllib.parse.urlencode(merged, doseq=True)
 
 
