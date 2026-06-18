@@ -8,6 +8,7 @@ import os
 import pathlib
 import struct
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,6 +20,26 @@ _ws_clients: set = set()
 _ws_lock = threading.Lock()
 _ws_latest_state: dict | None = None   # 마지막 폼 상태 (신규 접속자에게 전송)
 _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+
+def _ws_ping_loop():
+    """20초마다 모든 클라이언트에 ping 프레임 전송 (Railway 프록시 idle 타임아웃 방지)."""
+    while True:
+        time.sleep(20)
+        with _ws_lock:
+            clients = set(_ws_clients)
+        dead: set = set()
+        for sock in clients:
+            try:
+                sock.sendall(bytes([0x89, 0x00]))  # WS Ping frame
+            except Exception:
+                dead.add(sock)
+        if dead:
+            with _ws_lock:
+                _ws_clients.difference_update(dead)
+
+
+threading.Thread(target=_ws_ping_loop, daemon=True).start()
 
 
 def _ws_handshake(handler) -> None:

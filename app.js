@@ -3459,7 +3459,7 @@ function _wsConnect() {
       setTimeout(() => {
         if (_ws.readyState === WebSocket.OPEN)
           _ws.send(JSON.stringify({ type: "request_state" }));
-      }, 300);
+      }, 100);
     } else {
       // 보고자: 연결 즉시 현재 상태 전송 (뷰어가 받을 수 있도록)
       setTimeout(_wsBroadcast, 200);
