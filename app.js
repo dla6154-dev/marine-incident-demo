@@ -2105,12 +2105,18 @@ function fillSampleReport() {
   cargoWeightInput.value = SAMPLE_REPORT.cargoWeight;
   accidentTypeInput.value = SAMPLE_REPORT.accidentType;
   document.getElementById("accident-type-filter").value = SAMPLE_REPORT.accidentType;
+  const atLbl = document.getElementById("accident-type-label");
+  const atTrg = document.getElementById("accident-type-trigger");
+  if (atLbl && SAMPLE_REPORT.accidentType) { atLbl.textContent = SAMPLE_REPORT.accidentType; atTrg.dataset.selected = "true"; }
   humanDamageInput.value = SAMPLE_REPORT.humanDamage;
   pollutionDamageInput.value = SAMPLE_REPORT.pollutionDamage;
   shipDamageInput.value = SAMPLE_REPORT.shipDamage;
   delayTimeInput.value = SAMPLE_REPORT.delayTime;
   suspectedCauseInput.value = SAMPLE_REPORT.suspectedCause;
   document.getElementById("suspected-cause-filter").value = SAMPLE_REPORT.suspectedCause;
+  const scLbl = document.getElementById("suspected-cause-label");
+  const scTrg = document.getElementById("suspected-cause-trigger");
+  if (scLbl && SAMPLE_REPORT.suspectedCause) { scLbl.textContent = SAMPLE_REPORT.suspectedCause; scTrg.dataset.selected = "true"; }
   accidentNoteInput.value = SAMPLE_REPORT.accidentNote;
 
   syncVesselLookup({ allowSingleStatus: false });
@@ -2990,30 +2996,102 @@ const departureSuggestion = setupSuggestion(
 );
 departureSuggestion.setOptions = (opts) => { _departureOptions = opts; };
 
-// 사고종류 suggestion
+// ── 사고종류 / 추정원인 중앙 모달 피커 ──────────────────────────────────────
 const ACCIDENT_TYPES = ["충돌","접촉","좌초","전복","화재","폭발","침몰","행방불명",
   "기관손상","추진축계손상","조타장치손상","속구손상","침수","부유물감김",
   "운항저해","해양오염","안전사고","기타"];
-setupSuggestion(
-  document.getElementById("accident-type-filter"),
-  document.getElementById("accident-type-box"),
-  accidentTypeInput,
-  () => ACCIDENT_TYPES
-);
 
-// 추정 원인 suggestion
 const SUSPECTED_CAUSES = [
   "선장업무 소홀(조선미숙 등)","견시 소홀","정비점검 소홀","당직근무 소홀",
   "부적절한 충돌회피(조선)","무리한 운항(기상)","선위 부정확","근접 항해",
   "추월 위반","안전업무 소홀","선저 파공(누수)","기관계통 고장","전기계통 고장",
   "항해계기 고장","선박속구 고장","기상악화","해상 부유물","외부 발화원(차량/화물)",
   "지병","과로","자살(추정)","여객 부주의","기타(1~22번 이외의 것)"];
-setupSuggestion(
-  document.getElementById("suspected-cause-filter"),
-  document.getElementById("suspected-cause-box"),
-  suspectedCauseInput,
-  () => SUSPECTED_CAUSES
-);
+
+(function setupPickerModal() {
+  const modal      = document.getElementById("picker-modal");
+  const backdrop   = modal.querySelector(".picker-modal-backdrop");
+  const title      = document.getElementById("picker-modal-title");
+  const searchInput= document.getElementById("picker-modal-search");
+  const list       = document.getElementById("picker-modal-list");
+  const closeBtn   = document.getElementById("picker-modal-close");
+
+  let _options  = [];
+  let _hidden   = null;   // hidden input
+  let _trigger  = null;   // trigger button
+  let _label    = null;   // span inside trigger
+
+  function renderList(query) {
+    const q = (query || "").trim();
+    const matches = q ? _options.filter(o => o.includes(q)) : _options;
+    const current = _hidden ? _hidden.value : "";
+    list.innerHTML = matches.map(o =>
+      `<button type="button" class="picker-modal-item${o === current ? " selected" : ""}">${o}</button>`
+    ).join("");
+    list.querySelectorAll(".picker-modal-item").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const val = btn.textContent;
+        _hidden.value = val;
+        _hidden.dispatchEvent(new Event("input", { bubbles: true }));
+        _hidden.dispatchEvent(new Event("change", { bubbles: true }));
+        // 필터 hidden input도 동기화 (WS 동기화용)
+        const filterId = _hidden.id + "-filter";
+        const filterEl = document.getElementById(filterId);
+        if (filterEl) { filterEl.value = val; filterEl.dispatchEvent(new Event("change", { bubbles: true })); }
+        _label.textContent = val;
+        _trigger.dataset.selected = "true";
+        close();
+      });
+    });
+  }
+
+  function open(options, hiddenInput, triggerBtn, labelEl, modalTitle) {
+    _options = options;
+    _hidden  = hiddenInput;
+    _trigger = triggerBtn;
+    _label   = labelEl;
+    title.textContent = modalTitle;
+    searchInput.value = "";
+    renderList("");
+    modal.classList.remove("hidden");
+    setTimeout(() => searchInput.focus(), 80);
+  }
+
+  function close() {
+    modal.classList.add("hidden");
+    _trigger && _trigger.focus();
+  }
+
+  closeBtn.addEventListener("click", close);
+  backdrop.addEventListener("click", close);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+  searchInput.addEventListener("input", () => renderList(searchInput.value));
+
+  // 사고종류 트리거
+  const atTrigger = document.getElementById("accident-type-trigger");
+  const atLabel   = document.getElementById("accident-type-label");
+  atTrigger.addEventListener("click", () =>
+    open(ACCIDENT_TYPES, accidentTypeInput, atTrigger, atLabel, "사고종류 선택")
+  );
+
+  // 추정원인 트리거
+  const scTrigger = document.getElementById("suspected-cause-trigger");
+  const scLabel   = document.getElementById("suspected-cause-label");
+  scTrigger.addEventListener("click", () =>
+    open(SUSPECTED_CAUSES, suspectedCauseInput, scTrigger, scLabel, "추정 원인 선택")
+  );
+
+  // WS 동기화 시 버튼 라벨 복원
+  function syncTriggerLabel(hiddenInput, trigger, label) {
+    hiddenInput.addEventListener("change", () => {
+      const v = hiddenInput.value;
+      label.textContent = v || "선택하세요";
+      trigger.dataset.selected = v ? "true" : "false";
+    });
+  }
+  syncTriggerLabel(accidentTypeInput, atTrigger, atLabel);
+  syncTriggerLabel(suspectedCauseInput, scTrigger, scLabel);
+})();
 
 
 // ── 실시간 운항 선박 조회 ──────────────────────────────────────────

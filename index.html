@@ -109,17 +109,23 @@
             <label>오염 피해<input id="pollution-damage" name="pollutionDamage" type="text" placeholder="예: 없음 / 경유 소량 유출"></label>
             <label>선박/시설물 피해<input id="ship-damage" name="shipDamage" type="text" placeholder="예: 선수부 파손"></label>
             <label>지연시간<input id="delay-time" name="delayTime" type="text" placeholder="예: 30분"></label>
-            <label class="suggestion-field">
+            <label class="picker-field">
               사고종류
-              <input id="accident-type-filter" type="text" autocomplete="off" placeholder="검색...">
-              <div id="accident-type-box" class="suggestion-box hidden"></div>
+              <button type="button" class="picker-trigger" id="accident-type-trigger" data-picker="accident-type">
+                <span id="accident-type-label">선택하세요</span>
+                <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+              </button>
               <input type="hidden" id="accident-type" name="accidentType">
+              <input type="hidden" id="accident-type-filter">
             </label>
-            <label class="suggestion-field">
+            <label class="picker-field">
               추정 원인
-              <input id="suspected-cause-filter" type="text" autocomplete="off" placeholder="검색...">
-              <div id="suspected-cause-box" class="suggestion-box hidden"></div>
+              <button type="button" class="picker-trigger" id="suspected-cause-trigger" data-picker="suspected-cause">
+                <span id="suspected-cause-label">선택하세요</span>
+                <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+              </button>
               <input type="hidden" id="suspected-cause" name="suspectedCause">
+              <input type="hidden" id="suspected-cause-filter">
             </label>
           </div>
         </div>
@@ -413,6 +419,21 @@
 
   <script src="https://cdn.jsdelivr.net/npm/ol@10.6.1/dist/ol.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- 선택 모달 (사고종류 / 추정원인 공용) -->
+  <div id="picker-modal" class="picker-modal hidden" role="dialog" aria-modal="true">
+    <div class="picker-modal-backdrop"></div>
+    <div class="picker-modal-panel">
+      <div class="picker-modal-header">
+        <span id="picker-modal-title" class="picker-modal-title"></span>
+        <button type="button" class="picker-modal-close" id="picker-modal-close" aria-label="닫기">✕</button>
+      </div>
+      <div class="picker-modal-search-wrap">
+        <input type="text" id="picker-modal-search" class="picker-modal-search" placeholder="검색...">
+      </div>
+      <div id="picker-modal-list" class="picker-modal-list"></div>
+    </div>
+  </div>
+
   <script src="/app.js"></script>
 </body>
 </html>
