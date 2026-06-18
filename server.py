@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import pathlib
+import queue
 import struct
 import threading
 import time
@@ -15,11 +16,31 @@ import urllib.request
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-# ── WebSocket (pure Python, no extra deps) ───────────────────────────────────
+# ── WebSocket (보고자용) + SSE (뷰어용) ─────────────────────────────────────
 _ws_clients: set = set()
 _ws_lock = threading.Lock()
 _ws_latest_state: dict | None = None   # 마지막 폼 상태 (신규 접속자에게 전송)
 _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+# SSE 클라이언트 (뷰어) — Railway 프록시가 WS 업스트림을 차단하므로 SSE 사용
+_sse_clients: set = set()
+_sse_lock = threading.Lock()
+
+
+def _sse_broadcast(text: str) -> None:
+    """모든 SSE 뷰어 클라이언트에 state 이벤트 전송."""
+    payload = f"data: {text}\n\n".encode("utf-8")
+    with _sse_lock:
+        clients = set(_sse_clients)
+    dead: set = set()
+    for q in clients:
+        try:
+            q.put_nowait(payload)
+        except Exception:
+            dead.add(q)
+    if dead:
+        with _sse_lock:
+            _sse_clients.difference_update(dead)
 
 
 def _ws_ping_loop():
@@ -672,6 +693,9 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
             self.handle_websocket()
             return
         parsed = urllib.parse.urlsplit(self.path)
+        if parsed.path == "/api/sse":
+            self.handle_sse()
+            return
         if parsed.path == "/api/nearest":
             self.handle_nearest(parsed.query)
             return
@@ -886,6 +910,7 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
                         if msg.get("type") == "state":
                             _ws_latest_state = msg.get("data")
                             _ws_broadcast(text, exclude=sock)
+                            _sse_broadcast(text)  # SSE 뷰어에도 전송
                         elif msg.get("type") == "request_state":
                             print(f"[ws] {client_ip} request_state → broadcasting to {len(_ws_clients)-1} others")
                             _ws_broadcast(json.dumps({"type": "request_state"}, ensure_ascii=False), exclude=sock)
@@ -899,6 +924,45 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
             with _ws_lock:
                 _ws_clients.discard(sock)
             print(f"[ws] {client_ip} disconnected  (total: {len(_ws_clients)})")
+
+    def handle_sse(self) -> None:
+        """SSE 엔드포인트 — 뷰어 전용. Railway 프록시가 WS 업스트림을 차단하므로 사용."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Accel-Buffering", "no")  # Nginx 버퍼링 비활성화
+        self.end_headers()
+
+        q: queue.Queue = queue.Queue()
+        with _sse_lock:
+            _sse_clients.add(q)
+        client_ip = self.client_address[0]
+        print(f"[sse] {client_ip} connected  (total: {len(_sse_clients)})")
+
+        try:
+            # 현재 최신 state 즉시 전송
+            with _ws_lock:
+                state_snapshot = _ws_latest_state
+            if state_snapshot:
+                payload = f"data: {json.dumps({'type': 'state', 'data': state_snapshot}, ensure_ascii=False)}\n\n"
+                self.wfile.write(payload.encode("utf-8"))
+                self.wfile.flush()
+
+            while True:
+                try:
+                    data = q.get(timeout=25)
+                    self.wfile.write(data)
+                    self.wfile.flush()
+                except queue.Empty:
+                    # 25초마다 heartbeat comment 전송 (Railway 연결 유지)
+                    self.wfile.write(b": heartbeat\n\n")
+                    self.wfile.flush()
+        except Exception:
+            pass
+        finally:
+            with _sse_lock:
+                _sse_clients.discard(q)
+            print(f"[sse] {client_ip} disconnected  (total: {len(_sse_clients)})")
 
     def handle_kma_weather(self, query_string: str) -> None:
         params = urllib.parse.parse_qs(query_string)

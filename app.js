@@ -3540,17 +3540,51 @@ if (IS_VIEW_MODE) {
   });
 }
 
-// 폼 필드 변경 시 브로드캐스트 등록 (뷰어 모드에서는 수신만)
+// ── SSE 뷰어 수신 (Railway WS 업스트림 차단 문제 우회) ───────────────────────
+function _sseConnect() {
+  const evtSource = new EventSource("/api/sse");
+
+  evtSource.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === "state" && msg.data && _viewerFirstState) {
+        _viewerFirstState = false;
+        _wsApplyState(msg.data);
+        const lat = parseFloat(msg.data["lat-input"]);
+        const lng = parseFloat(msg.data["lng-input"]);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          setTimeout(() => {
+            if (typeof map !== "undefined") { map.updateSize(); map.renderSync(); }
+            runSearch();
+          }, 150);
+        }
+      } else if (msg.type === "state" && msg.data) {
+        _wsApplyState(msg.data);
+      }
+    } catch (_) {}
+  };
+
+  evtSource.onerror = () => {
+    // EventSource는 자동 재연결하므로 별도 처리 불필요
+    console.log("[sse] reconnecting...");
+  };
+}
+
+// 폼 필드 변경 시 브로드캐스트 등록
 document.addEventListener("DOMContentLoaded", () => {
-  _wsConnect();
-  if (!IS_VIEW_MODE) {
+  if (IS_VIEW_MODE) {
+    // 뷰어: SSE로 수신
+    _sseConnect();
+  } else {
+    // 보고자: WS로 송수신
+    _wsConnect();
     for (const id of _WS_FIELDS) {
       const el = document.getElementById(id);
       if (!el) continue;
       el.addEventListener("input", _wsBroadcast);
       el.addEventListener("change", _wsBroadcast);
     }
-    // 30초마다 자동 재전송: 뷰어가 나중에 접속해도 최신 상태를 받을 수 있도록
+    // 30초마다 자동 재전송
     setInterval(_wsBroadcast, 30000);
   }
 });
