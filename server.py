@@ -25,7 +25,7 @@ _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 def _ws_ping_loop():
     """20초마다 모든 클라이언트에 ping 프레임 전송 (Railway 프록시 idle 타임아웃 방지)."""
     while True:
-        time.sleep(20)
+        time.sleep(5)
         with _ws_lock:
             clients = set(_ws_clients)
         dead: set = set()
@@ -845,11 +845,14 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
         sock = self.request
         sock.settimeout(None)
 
-        # 신규 접속자에게 현재 최신 상태 즉시 전송
+        # Railway 프록시 keep-alive: 연결 직후 서버→클라이언트 방향으로 즉시 전송
         with _ws_lock:
             state_snapshot = _ws_latest_state
         if state_snapshot:
             _ws_send(sock, json.dumps({"type": "state", "data": state_snapshot}, ensure_ascii=False))
+        else:
+            # state가 없어도 Railway 프록시가 연결을 끊지 않도록 ready 프레임 전송
+            _ws_send(sock, json.dumps({"type": "ready"}, ensure_ascii=False))
 
         with _ws_lock:
             _ws_clients.add(sock)
