@@ -637,6 +637,14 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT_DIR), **kwargs)
 
+    def guess_type(self, path):
+        ctype = super().guess_type(path)
+        # CSS/JS/HTML 파일에 charset=utf-8 강제 (Railway에서 □ 등 깨짐 방지)
+        if isinstance(ctype, str) and ctype.startswith(("text/css", "text/javascript", "text/html", "application/javascript")):
+            if "charset" not in ctype:
+                ctype = ctype + "; charset=utf-8"
+        return ctype
+
     def do_GET(self) -> None:
         # WebSocket 업그레이드 요청 처리
         if self.headers.get("Upgrade", "").lower() == "websocket":
