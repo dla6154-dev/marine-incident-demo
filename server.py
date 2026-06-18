@@ -315,6 +315,140 @@ def _parse_buoy(text: str, stn: str) -> dict | None:
     return None
 
 
+def _fetch_open_meteo(lat: float, lng: float) -> dict | None:
+    """Open-Meteo API로 기상+해양 데이터 조회 (KMA 접근 불가 시 fallback)."""
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    wd = ws = ta = wh = None
+    try:
+        atmos_url = (
+            f"https://api.open-meteo.com/v1/forecast?"
+            f"latitude={lat}&longitude={lng}"
+            f"&current=wind_speed_10m,wind_direction_10m,temperature_2m"
+            f"&wind_speed_unit=ms&timezone=Asia%2FSeoul"
+        )
+        req = urllib.request.Request(atmos_url, headers={"User-Agent": "marine-incident-demo/1.0"})
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as r:
+            cur = json.loads(r.read()).get("current", {})
+        wd = cur.get("wind_direction_10m")
+        ws = cur.get("wind_speed_10m")
+        ta = cur.get("temperature_2m")
+    except Exception as exc:
+        print(f"[open-meteo] atmos error: {exc}")
+
+    try:
+        marine_url = (
+            f"https://marine-api.open-meteo.com/v1/marine?"
+            f"latitude={lat}&longitude={lng}"
+            f"&current=wave_height&timezone=Asia%2FSeoul"
+        )
+        req = urllib.request.Request(marine_url, headers={"User-Agent": "marine-incident-demo/1.0"})
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as r:
+            wh = json.loads(r.read()).get("current", {}).get("wave_height")
+    except Exception as exc:
+        print(f"[open-meteo] marine error: {exc}")
+
+    if wd is None and ws is None and wh is None:
+        return None
+    return {
+        "stn": "open-meteo",
+        "name": "Open-Meteo",
+        "tm": "",
+        "wind_dir_deg": wd,
+        "wind_dir": _deg_to_dir(wd),
+        "wind_speed": ws,
+        "wind_gust": None,
+        "wave_height": wh,
+        "sea_temp": None,
+        "air_temp": ta,
+        "pressure": None,
+        "humidity": None,
+        "source": "open-meteo",
+    }
+
+
+def _fetch_nearest_island_overpass(lat: float, lng: float, island_type_filter: str) -> dict | None:
+    """Overpass API(OSM)로 주변 섬 검색 — VWorld 접근 불가 환경 fallback."""
+    import ssl
+    from nearest_island import (
+        haversine_nm, initial_bearing, bearing_to_direction,
+        format_distance_nm, ZERO_DISTANCE_NM,
+    )
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    radius_m = 111120  # ~60nm
+    query = (
+        f"[out:json][timeout:30];"
+        f"("
+        f'node["place"~"^(island|islet)$"](around:{radius_m},{lat},{lng});'
+        f'way["place"~"^(island|islet)$"](around:{radius_m},{lat},{lng});'
+        f'relation["place"~"^(island|islet)$"](around:{radius_m},{lat},{lng});'
+        f");out center;"
+    )
+    url = "https://overpass-api.de/api/interpreter"
+    data_enc = urllib.parse.urlencode({"data": query}).encode()
+    req = urllib.request.Request(url, data=data_enc, headers={"User-Agent": "marine-incident-demo/1.0"})
+    with urllib.request.urlopen(req, timeout=35, context=ctx) as r:
+        elements = json.loads(r.read()).get("elements", [])
+
+    best: dict | None = None
+    best_dist = float("inf")
+    for el in elements:
+        if "lat" in el and "lon" in el:
+            elat, elng = el["lat"], el["lon"]
+        elif "center" in el:
+            elat, elng = el["center"]["lat"], el["center"]["lon"]
+        else:
+            continue
+        if not (33 <= elat <= 39 and 124 <= elng <= 132):
+            continue
+        tags = el.get("tags", {})
+        name = tags.get("name:ko") or tags.get("name") or ""
+        if not name:
+            continue
+        dist = haversine_nm(lat, lng, elat, elng)
+        if dist < best_dist:
+            best_dist = dist
+            best = {"name": name, "lat": elat, "lng": elng}
+
+    if not best:
+        return None
+
+    name = best["name"]
+    ilat, ilng, dist_nm = best["lat"], best["lng"], best_dist
+    res: dict = {
+        "query_lat": lat,
+        "query_lng": lng,
+        "distance_nm": round(dist_nm, 3),
+        "coastline_distance_nm": round(dist_nm, 3),
+        "coastline_point": {"lat": round(ilat, 6), "lng": round(ilng, 6)},
+        "island": {
+            "island_id": "",
+            "name": name,
+            "island_type": "도서",
+            "location": "",
+            "lat": round(ilat, 6),
+            "lng": round(ilng, 6),
+        },
+    }
+    if dist_nm >= ZERO_DISTANCE_NM:
+        bearing = initial_bearing(ilat, ilng, lat, lng)
+        res["bearing_deg"] = round(bearing, 1)
+        res["direction"] = bearing_to_direction(bearing)
+        res["summary"] = f"{name} {res['direction']} {format_distance_nm(dist_nm)}해리"
+    else:
+        res["bearing_deg"] = None
+        res["direction"] = None
+        res["summary"] = f"{name} {format_distance_nm(dist_nm)}해리"
+    return res
+
+
 def _parse_aws(text: str, stn: str) -> dict | None:
     """AWS 분자료(nph-aws2_min) 파싱 – disp=1 형식."""
     for line in text.splitlines():
@@ -479,7 +613,8 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
             self.send_json({"error": "lat and lng must be valid decimal numbers"}, status=HTTPStatus.BAD_REQUEST)
             return
 
-        # VWorld WFS로 전국 섬 검색 (단계적 반경: 30nm → 60nm)
+        result = None
+        # 1순위: VWorld WFS (로컬/한국 IP 환경)
         try:
             wfs_features = get_cached_wfs(lat, lng, island_type)
             if wfs_features is not None:
@@ -496,14 +631,21 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
                     if wfs_features:
                         break
                 set_cached_wfs(lat, lng, island_type, wfs_features)
-
             result = find_nearest_island_wfs(wfs_features, lat, lng)
-            if result is None:
-                self.send_json({"error": "주변 60NM 이내에 유인도가 없습니다."}, status=HTTPStatus.NOT_FOUND)
-                return
         except Exception as exc:
-            print(f"[wfs] error: {exc}")
-            self.send_json({"error": f"섬 검색 오류: {exc}"}, status=HTTPStatus.BAD_GATEWAY)
+            print(f"[wfs] VWorld failed ({exc}), trying Overpass...")
+
+        # 2순위: Overpass API (Railway 등 해외 서버 fallback)
+        if result is None:
+            try:
+                result = _fetch_nearest_island_overpass(lat, lng, island_type)
+                if result:
+                    print(f"[overpass] found: {result.get('island', {}).get('name')}")
+            except Exception as exc2:
+                print(f"[overpass] error: {exc2}")
+
+        if result is None:
+            self.send_json({"error": "주변 60NM 이내에 유인도가 없습니다."}, status=HTTPStatus.NOT_FOUND)
             return
 
         self.send_json(result)
@@ -618,6 +760,8 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
         params = urllib.parse.parse_qs(query_string)
         stn = params.get("stn", ["0"])[0]
         stype = params.get("type", ["sea"])[0]   # sea | buoy | aws
+        lat_raw = params.get("lat", [None])[0]
+        lng_raw = params.get("lng", [None])[0]
         # tm 없으면 현재 시각 기준 (30분 전 – 데이터 확정 보장)
         tm_raw = params.get("tm", [None])[0]
         if tm_raw:
@@ -626,6 +770,8 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
             past = datetime.datetime.now() - datetime.timedelta(minutes=30)
             tm = past.strftime("%Y%m%d%H%M")
 
+        result = None
+        # 1순위: KMA API
         try:
             if stype == "buoy":
                 url = f"{KMA_APIHUB_BASE}/url/kma_buoy.php?tm={tm}&stn={stn}&help=1&authKey={KMA_AUTH_KEY}"
@@ -640,8 +786,16 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
                 raw = _kma_fetch(url)
                 result = _parse_sea_obs(raw, stn)
         except Exception as exc:
-            self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
-            return
+            print(f"[kma] failed (stn={stn}): {exc}, trying Open-Meteo...")
+
+        # 2순위: Open-Meteo (KMA 접근 불가 환경 fallback)
+        if result is None and lat_raw and lng_raw:
+            try:
+                result = _fetch_open_meteo(float(lat_raw), float(lng_raw))
+                if result:
+                    print(f"[open-meteo] fallback ok stn={stn}")
+            except Exception as exc2:
+                print(f"[open-meteo] error: {exc2}")
 
         if result is None:
             self.send_json({"error": "no_data"}, status=HTTPStatus.NOT_FOUND)

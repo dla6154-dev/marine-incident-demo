@@ -1465,7 +1465,10 @@ function renderWeatherStations() {
 async function _fetchWeatherData(station) {
   if (!station) return null;
   try {
-    const res = await fetch(`/api/kma-weather?stn=${station.id}&type=sea`);
+    const p = new URLSearchParams({ stn: station.id, type: "sea" });
+    if (station.lat != null) p.set("lat", station.lat);
+    if (station.lng != null) p.set("lng", station.lng);
+    const res = await fetch(`/api/kma-weather?${p}`);
     if (!res.ok) return null;
     const d = await res.json();
     return d.error ? null : d;
