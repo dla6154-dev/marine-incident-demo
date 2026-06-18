@@ -3541,7 +3541,20 @@ if (IS_VIEW_MODE) {
     };
     setTimeout(_fixMapSize, 50);
     setTimeout(_fixMapSize, 300);
-    setTimeout(_fixMapSize, 800);
+    // URL에 lat/lng가 있으면 지도 크기 확정 후 runSearch 재실행
+    const _urlParams = new URLSearchParams(location.search);
+    const _urlLat = parseFloat(_urlParams.get("lat"));
+    const _urlLng = parseFloat(_urlParams.get("lng"));
+    if (!isNaN(_urlLat) && !isNaN(_urlLng)) {
+      setTimeout(() => {
+        _fixMapSize();
+        latInput.value = _urlLat.toFixed(6);
+        lngInput.value = _urlLng.toFixed(6);
+        runSearch();
+      }, 500);
+    } else {
+      setTimeout(_fixMapSize, 800);
+    }
   });
 }
 
