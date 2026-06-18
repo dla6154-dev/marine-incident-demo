@@ -619,21 +619,24 @@ const map = new ol.Map({
     new ol.layer.Tile({
       source: new ol.source.OSM(),
     }),
-    new ol.layer.Tile({
-      opacity: 0.82,
-      source: new ol.source.TileWMS({
-        url: "/api/vworld/wms",
-        params: {
-          SERVICE: "WMS",
-          VERSION: "1.3.0",
-          REQUEST: "GetMap",
-          FORMAT: "image/png",
-          TRANSPARENT: true,
-          LAYERS: "lt_l_toisdepcntah",
-        },
-        crossOrigin: "anonymous",
+    // VWorld 수심도 레이어: 로컬(localhost)에서만 활성화, Railway 등 외부 배포에서는 생략
+    ...(location.hostname === "localhost" || location.hostname === "127.0.0.1" ? [
+      new ol.layer.Tile({
+        opacity: 0.82,
+        source: new ol.source.TileWMS({
+          url: "/api/vworld/wms",
+          params: {
+            SERVICE: "WMS",
+            VERSION: "1.3.0",
+            REQUEST: "GetMap",
+            FORMAT: "image/png",
+            TRANSPARENT: true,
+            LAYERS: "lt_l_toisdepcntah",
+          },
+          crossOrigin: "anonymous",
+        }),
       }),
-    }),
+    ] : []),
     fireStationLayer,
     healthCenterLayer,
     hospitalLayer,
