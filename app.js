@@ -3446,6 +3446,10 @@ function _wsSetStatus(connected) {
   if (txt) txt.textContent = connected ? "실시간 연결됨" : "연결 끊김";
 }
 
+// _viewerFirstState를 _wsConnect 밖에 선언: 재연결 시 리셋되지 않도록
+// (연결이 500ms 만에 끊겨도 runSearch 예약은 유지됨)
+let _viewerFirstState = true;
+
 function _wsConnect() {
   clearTimeout(_wsReconnectTimer);
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -3457,7 +3461,7 @@ function _wsConnect() {
     if (IS_VIEW_MODE) {
       // 뷰어: 서버에 state가 없을 경우를 대비해 보고자에게 state 요청
       setTimeout(() => {
-        if (_ws.readyState === WebSocket.OPEN)
+        if (_ws && _ws.readyState === WebSocket.OPEN)
           _ws.send(JSON.stringify({ type: "request_state" }));
       }, 100);
     } else {
@@ -3466,7 +3470,6 @@ function _wsConnect() {
     }
   };
 
-  let _viewerFirstState = IS_VIEW_MODE; // 뷰어 최초 상태 수신 플래그
   _ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
@@ -3478,18 +3481,18 @@ function _wsConnect() {
       }
 
       if (msg.type === "state" && msg.data) {
-        if (_viewerFirstState) {
+        if (IS_VIEW_MODE && _viewerFirstState) {
           // 뷰어 최초 수신: 좌표 변경 여부와 무관하게 runSearch 강제 실행
           _viewerFirstState = false;
           _wsApplyState(msg.data);
           const lat = parseFloat(msg.data["lat-input"]);
           const lng = parseFloat(msg.data["lng-input"]);
           if (!isNaN(lat) && !isNaN(lng)) {
-            // 지도 크기 재계산(800ms) 완료 후 실행
+            // 지도 크기 재계산 완료 후 실행 (연결 끊겨도 타이머는 유지됨)
             setTimeout(() => {
               if (typeof map !== "undefined") { map.updateSize(); map.renderSync(); }
               runSearch();
-            }, 900);
+            }, 150);
           }
         } else {
           _wsApplyState(msg.data);
