@@ -849,10 +849,11 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
         with _ws_lock:
             state_snapshot = _ws_latest_state
         if state_snapshot:
-            _ws_send(sock, json.dumps({"type": "state", "data": state_snapshot}, ensure_ascii=False))
+            ok = _ws_send(sock, json.dumps({"type": "state", "data": state_snapshot}, ensure_ascii=False))
+            print(f"[ws] sent state to new client: {ok}")
         else:
-            # state가 없어도 Railway 프록시가 연결을 끊지 않도록 ready 프레임 전송
-            _ws_send(sock, json.dumps({"type": "ready"}, ensure_ascii=False))
+            ok = _ws_send(sock, json.dumps({"type": "ready"}, ensure_ascii=False))
+            print(f"[ws] sent ready to new client: {ok}")
 
         with _ws_lock:
             _ws_clients.add(sock)
@@ -861,31 +862,39 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
 
         try:
             while True:
+                print(f"[ws] {client_ip} waiting for frame...")
                 opcode, data = _ws_read_frame(sock)
+                print(f"[ws] {client_ip} got frame opcode={opcode} len={len(data) if data else 0}")
                 if opcode is None:
+                    print(f"[ws] {client_ip} read_frame returned None (connection closed)")
                     break
                 if opcode == 8:   # Close
+                    print(f"[ws] {client_ip} received close frame")
                     break
                 if opcode == 9:   # Ping → Pong
                     try:
                         sock.sendall(bytes([0x8A, 0x00]))
-                    except Exception:
+                    except Exception as e:
+                        print(f"[ws] {client_ip} pong failed: {e}")
                         break
                     continue
                 if opcode == 1:   # Text
                     try:
                         text = data.decode("utf-8")
                         msg = json.loads(text)
+                        print(f"[ws] {client_ip} msg type={msg.get('type')}")
                         if msg.get("type") == "state":
                             _ws_latest_state = msg.get("data")
                             _ws_broadcast(text, exclude=sock)
                         elif msg.get("type") == "request_state":
-                            # 뷰어가 state 요청 → 보고자 클라이언트들에게 중계
+                            print(f"[ws] {client_ip} request_state → broadcasting to {len(_ws_clients)-1} others")
                             _ws_broadcast(json.dumps({"type": "request_state"}, ensure_ascii=False), exclude=sock)
                         else:
                             _ws_broadcast(text, exclude=sock)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"[ws] {client_ip} msg parse error: {e}")
+        except Exception as e:
+            print(f"[ws] {client_ip} outer exception: {e}")
         finally:
             with _ws_lock:
                 _ws_clients.discard(sock)
