@@ -854,7 +854,12 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
                         msg = json.loads(text)
                         if msg.get("type") == "state":
                             _ws_latest_state = msg.get("data")
-                        _ws_broadcast(text, exclude=sock)
+                            _ws_broadcast(text, exclude=sock)
+                        elif msg.get("type") == "request_state":
+                            # 뷰어가 state 요청 → 보고자 클라이언트들에게 중계
+                            _ws_broadcast(json.dumps({"type": "request_state"}, ensure_ascii=False), exclude=sock)
+                        else:
+                            _ws_broadcast(text, exclude=sock)
                     except Exception:
                         pass
         finally:

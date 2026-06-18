@@ -3454,8 +3454,14 @@ function _wsConnect() {
   _ws.onopen = () => {
     _wsSetStatus(true);
     console.log("[ws] connected");
-    // 보고자 모드: 연결 즉시 현재 상태 전송 (뷰어가 받을 수 있도록)
-    if (!IS_VIEW_MODE) {
+    if (IS_VIEW_MODE) {
+      // 뷰어: 서버에 state가 없을 경우를 대비해 보고자에게 state 요청
+      setTimeout(() => {
+        if (_ws.readyState === WebSocket.OPEN)
+          _ws.send(JSON.stringify({ type: "request_state" }));
+      }, 300);
+    } else {
+      // 보고자: 연결 즉시 현재 상태 전송 (뷰어가 받을 수 있도록)
       setTimeout(_wsBroadcast, 200);
     }
   };
@@ -3464,6 +3470,13 @@ function _wsConnect() {
   _ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
+
+      // 보고자: 뷰어의 state 요청 수신 → 즉시 현재 상태 전송
+      if (msg.type === "request_state" && !IS_VIEW_MODE) {
+        _wsBroadcast();
+        return;
+      }
+
       if (msg.type === "state" && msg.data) {
         if (_viewerFirstState) {
           // 뷰어 최초 수신: 좌표 변경 여부와 무관하게 runSearch 강제 실행
