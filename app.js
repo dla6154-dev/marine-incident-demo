@@ -2983,7 +2983,14 @@ function setupSuggestion(filterInputEl, boxEl, hiddenInputEl, getOptions) {
   }
   filterInputEl.addEventListener("input", () => render(filterInputEl.value));
   filterInputEl.addEventListener("focus", () => render(filterInputEl.value));
-  filterInputEl.addEventListener("blur", () => setTimeout(() => boxEl.classList.add("hidden"), 150));
+  filterInputEl.addEventListener("blur", () => {
+    setTimeout(() => boxEl.classList.add("hidden"), 150);
+    // 목록에서 선택 안 해도 직접 입력한 텍스트를 hidden input에 반영
+    if (hiddenInputEl && filterInputEl.value.trim()) {
+      hiddenInputEl.value = filterInputEl.value.trim();
+      hiddenInputEl.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
   return { refresh: () => render(filterInputEl.value) };
 }
 
