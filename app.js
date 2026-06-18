@@ -2981,16 +2981,16 @@ function setupSuggestion(filterInputEl, boxEl, hiddenInputEl, getOptions) {
     });
     boxEl.classList.remove("hidden");
   }
-  filterInputEl.addEventListener("input", () => render(filterInputEl.value));
-  filterInputEl.addEventListener("focus", () => render(filterInputEl.value));
-  filterInputEl.addEventListener("blur", () => {
-    setTimeout(() => boxEl.classList.add("hidden"), 150);
-    // 목록에서 선택 안 해도 직접 입력한 텍스트를 hidden input에 반영
-    if (hiddenInputEl && filterInputEl.value.trim()) {
+  filterInputEl.addEventListener("input", () => {
+    render(filterInputEl.value);
+    // 직접 입력 시 즉시 hidden input에도 반영 (목록 선택 안 해도 됨)
+    if (hiddenInputEl) {
       hiddenInputEl.value = filterInputEl.value.trim();
       hiddenInputEl.dispatchEvent(new Event("change", { bubbles: true }));
     }
   });
+  filterInputEl.addEventListener("focus", () => render(filterInputEl.value));
+  filterInputEl.addEventListener("blur", () => setTimeout(() => boxEl.classList.add("hidden"), 150));
   return { refresh: () => render(filterInputEl.value) };
 }
 
