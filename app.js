@@ -3442,7 +3442,7 @@ function _wsApplyState(state) {
   }
   _wsSyncing = false;
 
-  if (latChanged && !IS_VIEW_MODE) {
+  if (latChanged) {
     runSearch();
   }
 }
