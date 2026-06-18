@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>소방서 좌표 미리보기</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.6.1/ol.css">
+  <link rel="stylesheet" href="/fire-station-preview.css">
+</head>
+<body>
+  <div class="preview-shell">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <p class="eyebrow">Fire Station Preview</p>
+        <h1>소방서 좌표 미리보기</h1>
+        <p class="lead">
+          현재 사고 좌표 기준으로 선택된 소방서를 확인하고, 같은 화면에서 제외 바운더리를 직접 그려
+          불필요한 지역의 소방서를 즉시 제외할 수 있습니다.
+        </p>
+      </div>
+
+      <section class="card">
+        <h2>현재 선택 소방서</h2>
+        <div class="info-grid">
+          <div class="info-box">
+            <span>소방서명</span>
+            <strong id="station-name">-</strong>
+          </div>
+          <div class="info-box">
+            <span>거리</span>
+            <strong id="station-distance">-</strong>
+          </div>
+        </div>
+        <dl class="detail-list">
+          <div>
+            <dt>전화번호</dt>
+            <dd id="station-phone">-</dd>
+          </div>
+          <div>
+            <dt>주소</dt>
+            <dd id="station-address">-</dd>
+          </div>
+          <div>
+            <dt>소방서 좌표</dt>
+            <dd id="station-coordinates">-</dd>
+          </div>
+        </dl>
+        <div class="button-grid">
+          <button id="copy-station-coordinates-button" type="button">소방서 좌표 복사</button>
+          <a id="back-link" class="link-button" href="/">사고 앱으로 돌아가기</a>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>제외 바운더리</h2>
+        <ol class="steps">
+          <li>`그리기 시작`을 누른 뒤 지도에서 꼭짓점을 순서대로 클릭합니다.</li>
+          <li>더블클릭하거나 `현재 폴리곤 완료`를 눌러 한 개의 제외 구역을 확정합니다.</li>
+          <li>확정 즉시 해당 바운더리 안의 소방서는 목록에서 제외됩니다.</li>
+          <li>이미 그린 바운더리는 꼭짓점을 드래그해서 바로 수정할 수 있습니다.</li>
+        </ol>
+
+        <div class="stat-grid">
+          <div class="stat-box">
+            <span>저장된 폴리곤</span>
+            <strong id="polygon-count">0</strong>
+          </div>
+          <div class="stat-box">
+            <span>현재 점 수</span>
+            <strong id="vertex-count">0</strong>
+          </div>
+          <div class="stat-box">
+            <span>표시 중 소방서</span>
+            <strong id="remaining-station-count">0</strong>
+          </div>
+        </div>
+
+        <div class="tool-grid">
+          <button id="start-draw-button" type="button">그리기 시작</button>
+          <button id="finish-draw-button" type="button" class="secondary">현재 폴리곤 완료</button>
+          <button id="undo-point-button" type="button" class="secondary">마지막 점 취소</button>
+          <button id="delete-last-button" type="button" class="secondary">마지막 폴리곤 삭제</button>
+          <button id="clear-all-button" type="button" class="danger">전체 삭제</button>
+          <button id="load-default-boundary-button" type="button" class="secondary">기본 내륙 불러오기</button>
+        </div>
+
+        <p id="status-text" class="status-text">소방서 데이터를 불러오는 중입니다.</p>
+
+        <div class="textarea-header">
+          <h3>좌표 배열</h3>
+          <div class="mini-actions">
+            <button id="copy-coordinates-button" type="button" class="secondary">좌표 배열 복사</button>
+            <button id="copy-geojson-button" type="button" class="secondary">GeoJSON 복사</button>
+          </div>
+        </div>
+        <textarea
+          id="boundary-coordinates"
+          class="code-area"
+          spellcheck="false"
+          aria-label="제외 바운더리 좌표 배열"
+        ></textarea>
+        <div class="button-grid">
+          <button id="apply-coordinates-button" type="button">좌표 배열 적용</button>
+          <button id="reset-picked-coordinates-button" type="button" class="secondary">선택 좌표를 사고 좌표로</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>선택 좌표</h2>
+        <div class="info-box large">
+          <span>지도를 클릭해서 선택한 좌표</span>
+          <strong id="picked-coordinates">-</strong>
+        </div>
+        <div class="button-grid">
+          <button id="copy-picked-coordinates-button" type="button">선택 좌표 복사</button>
+          <button id="focus-selected-station-button" type="button" class="secondary">선택 소방서로 이동</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="textarea-header">
+          <h2>현재 점 목록</h2>
+          <span class="caption">현재 그리고 있는 점 또는 마지막 폴리곤 점 목록</span>
+        </div>
+        <div id="vertex-list" class="vertex-list empty">아직 점이 없습니다.</div>
+      </section>
+    </aside>
+
+    <main class="map-panel">
+      <div class="map-toolbar">
+        <span class="pill">OSM 배경 + VWorld 해안선/WMS</span>
+        <span class="pill">주황 마커: 현재 선택 소방서</span>
+        <span class="pill">빨간 폴리곤: 제외 바운더리</span>
+        <span class="pill">파란 점: 사고 좌표</span>
+        <span class="pill">민트 점: 클릭 좌표</span>
+      </div>
+      <div id="map" class="map"></div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ol@10.6.1/dist/ol.js"></script>
+  <script src="/fire-station-preview.js"></script>
+</body>
+</html>

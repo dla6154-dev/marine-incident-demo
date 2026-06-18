@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>해양사고 상황보고 데모</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.6.1/ol.css">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="panel">
+      <div class="panel-header">
+        <p class="eyebrow">Marine Incident Demo</p>
+        <h1>해양사고 상황보고 데모</h1>
+        <p class="lead">상황보고 서식 기준으로 사고개요, 선박제원, 피해사항을 자동 정리하는 앱/웹 프로토타입입니다.</p>
+        <div class="ws-status-bar">
+          <span class="ws-dot offline" id="ws-status-dot"></span>
+          <span class="ws-status-label" id="ws-status-text">연결 중...</span>
+        </div>
+      </div>
+
+      <div class="panel-body-wrap">
+      <form id="search-form" class="panel-body">
+
+        <!-- hidden inputs -->
+        <input id="vessel-data-file" type="file" accept=".xlsx,.xls,.csv,.json" class="hidden">
+        <p id="vessel-data-status" class="hidden"></p>
+        <input id="vessel-number" name="vesselNumber" type="text" class="hidden">
+        <input id="vessel-type" name="vesselType" type="text" class="hidden">
+        <input id="gross-tonnage" name="grossTonnage" type="text" class="hidden">
+        <input id="registry-port" name="registryPort" type="text" class="hidden">
+        <input id="nationality" name="nationality" type="text" value="대한민국" class="hidden" readonly>
+        <input id="owner-name" name="ownerName" type="text" class="hidden">
+        <input id="inspection-agency" name="inspectionAgency" type="text" class="hidden">
+        <input id="insurance-status" name="insuranceStatus" type="text" class="hidden">
+
+        <!-- 카드 1: 사고 상세 정보 -->
+        <div class="info-card">
+          <div class="card-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M4 7h16a1 1 0 0 1 1 1v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a1 1 0 0 1 1-1z"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
+            <span>사고 상세 정보</span>
+          </div>
+          <div class="card-body">
+            <label class="vessel-name-field">
+              <span class="vessel-name-label-row">
+                선박명
+                <span id="vessel-last-update" class="vessel-update-badge hidden"></span>
+              </span>
+              <input id="vessel-name" name="vesselName" type="text" autocomplete="off" placeholder="선박명 또는 운항선박 검색...">
+              <div id="vessel-name-suggestion-box" class="suggestion-box hidden"></div>
+            </label>
+            <label id="vessel-number-picker-group" class="hidden">
+              동일 선박명 선박번호 선택
+              <select id="vessel-number-picker" name="vesselMatchNumber">
+                <option value="">선박번호를 선택하세요</option>
+              </select>
+            </label>
+            <div class="coord-row">
+              <label>위도<input id="lat-input" name="lat" type="number" step="any" placeholder="34.717627" required></label>
+              <label>경도<input id="lng-input" name="lng" type="number" step="any" placeholder="125.727954" required></label>
+            </div>
+            <div class="fixed-scope">
+              <span class="fixed-scope-label">검색기준</span>
+              <strong class="fixed-scope-value">유인도 고정</strong>
+            </div>
+            <div class="button-row">
+              <button type="submit">위치 계산</button>
+              <button id="sample-button" type="button" class="secondary">예시 좌표</button>
+            </div>
+            <label>기준 일시<input id="report-datetime" name="reportDatetime" type="datetime-local"></label>
+            <label>보고 센터<input id="report-center" name="reportCenter" type="text" placeholder="예: 목포운항관리센터"></label>
+          </div>
+        </div>
+
+        <!-- 카드 2: 운항 정보 -->
+        <div class="info-card">
+          <div class="card-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M5 20V10l7-7 7 7v10"/><path d="M9 20v-5h6v5"/></svg>
+            <span>운항 정보</span>
+          </div>
+          <div class="card-body card-body-grid">
+            <label class="route-search-field span-2">운항 항로 / 구간
+              <input id="operation-route" name="operationRoute" type="text" autocomplete="off" placeholder="항로명 검색...">
+              <div id="route-suggestion-box" class="suggestion-box hidden"></div>
+            </label>
+            <label class="suggestion-field span-2">출항지
+              <input id="departure-place-filter" type="text" autocomplete="off" placeholder="출항지 검색...">
+              <div id="departure-place-box" class="suggestion-box hidden"></div>
+              <input type="hidden" id="departure-place" name="departurePlace">
+            </label>
+            <label>출항 시각<input id="departure-time" name="departureTime" type="time"></label>
+            <label>현지 기상<input id="weather-summary" name="weatherSummary" type="text" placeholder="예: 풍향(SE), 풍속(8-9m/s), 파고(0.5-1.0m), 시정(양호)"></label>
+            <label>선원 수<input id="crew-count" name="crewCount" type="number" min="0" step="1" placeholder="예: 2"></label>
+            <label>여객 수<input id="passenger-count" name="passengerCount" type="number" min="0" step="1" placeholder="예: 565"></label>
+            <label>차량 수<input id="vehicle-count" name="vehicleCount" type="number" min="0" step="1" placeholder="예: 1"></label>
+            <label>화물<input id="cargo-weight" name="cargoWeight" type="text" placeholder="예: 182.882톤"></label>
+          </div>
+        </div>
+
+        <!-- 카드 3: 피해 / 사고 -->
+        <div class="info-card">
+          <div class="card-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span>피해 / 사고</span>
+          </div>
+          <div class="card-body">
+            <label>인명 피해<input id="human-damage" name="humanDamage" type="text" placeholder="예: 없음 / 경상 1명"></label>
+            <label>오염 피해<input id="pollution-damage" name="pollutionDamage" type="text" placeholder="예: 없음 / 경유 소량 유출"></label>
+            <label>선박/시설물 피해<input id="ship-damage" name="shipDamage" type="text" placeholder="예: 선수부 파손"></label>
+            <label>지연시간<input id="delay-time" name="delayTime" type="text" placeholder="예: 30분"></label>
+            <label class="suggestion-field">
+              사고종류
+              <input id="accident-type-filter" type="text" autocomplete="off" placeholder="검색...">
+              <div id="accident-type-box" class="suggestion-box hidden"></div>
+              <input type="hidden" id="accident-type" name="accidentType">
+            </label>
+            <label class="suggestion-field">
+              추정 원인
+              <input id="suspected-cause-filter" type="text" autocomplete="off" placeholder="검색...">
+              <div id="suspected-cause-box" class="suggestion-box hidden"></div>
+              <input type="hidden" id="suspected-cause" name="suspectedCause">
+            </label>
+          </div>
+        </div>
+
+        <!-- 카드 4: 사고개요 -->
+        <div class="info-card">
+          <div class="card-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            <span>사고개요</span>
+          </div>
+          <div class="card-body card-body-note">
+            <label class="flex-grow-label">
+              조치사항
+              <textarea id="accident-note" name="accidentNote" rows="6" placeholder="예: 기관손상 발생 후 자력 운항 가능 여부 확인 중"></textarea>
+            </label>
+            <button id="sample-report-button" type="button" class="secondary ghost full-btn">예시 보고서 채우기</button>
+          </div>
+        </div>
+
+      </form><!-- /#search-form / .panel-body -->
+      </div><!-- /.panel-body-wrap -->
+    </aside>
+
+    <main class="map-area">
+      <div class="map-toolbar">
+        <span class="pill">OSM 배경 + VWorld 해안선/WMS</span>
+        <span class="pill">상황보고 서식 미리보기</span>
+      </div>
+      <div class="map-stage">
+        <div id="map" class="map"></div>
+
+        <div id="emergency-cards-overlay" class="emergency-cards-overlay hidden">
+          <details class="emergency-card fire-card">
+            <summary>
+              <img class="ec-icon ec-icon-img" src="/icon_fire.svg" alt="소방서">
+              <span class="ec-label">소방서</span>
+              <span class="ec-name" id="preview-nearest-fire-station-name">-</span>
+              <span class="ec-dist" id="preview-nearest-fire-station-dist">-</span>
+            </summary>
+            <div class="ec-body">
+              <p id="preview-nearest-fire-station-phone">-</p>
+              <p id="preview-nearest-fire-station-addr">-</p>
+            </div>
+          </details>
+          <details class="emergency-card health-card">
+            <summary>
+              <img class="ec-icon ec-icon-img" src="/icon_health.svg" alt="보건소">
+              <span class="ec-label">보건소</span>
+              <span class="ec-name" id="preview-nearest-health-center-name">-</span>
+              <span class="ec-dist" id="preview-nearest-health-center-dist">-</span>
+            </summary>
+            <div class="ec-body">
+              <p id="preview-nearest-health-center-phone">-</p>
+              <p id="preview-nearest-health-center-addr">-</p>
+            </div>
+          </details>
+          <details class="emergency-card hospital-card">
+            <summary>
+              <img class="ec-icon ec-icon-img" src="/icon_hospital.svg" alt="병원">
+              <span class="ec-label">병원</span>
+              <span class="ec-name" id="preview-nearest-hospital-name">-</span>
+              <span class="ec-dist" id="preview-nearest-hospital-dist">-</span>
+            </summary>
+            <div class="ec-body">
+              <p id="preview-nearest-hospital-phone">-</p>
+              <p id="preview-nearest-hospital-addr">-</p>
+            </div>
+          </details>
+          <details class="emergency-card kcg-card">
+            <summary>
+              <img class="ec-icon ec-icon-img" src="/icon_kcg.svg" alt="해경">
+              <span class="ec-label">해경 파출소</span>
+              <span class="ec-name" id="preview-nearest-kcg-station-name">-</span>
+              <span class="ec-dist" id="preview-nearest-kcg-station-dist">-</span>
+            </summary>
+            <div class="ec-body">
+              <p id="preview-nearest-kcg-station">-</p>
+            </div>
+          </details>
+          <details class="emergency-card kcg-card">
+            <summary>
+              <img class="ec-icon ec-icon-img" src="/icon_kcg.svg" alt="해경">
+              <span class="ec-label">해경 출장소</span>
+              <span class="ec-name" id="preview-nearest-kcg-branch-name">-</span>
+              <span class="ec-dist" id="preview-nearest-kcg-branch-dist">-</span>
+            </summary>
+            <div class="ec-body">
+              <p id="preview-nearest-kcg-branch">-</p>
+            </div>
+          </details>
+          <details class="emergency-card weather-station-card">
+            <summary>
+              <span class="ec-label">기상관측</span>
+              <span class="ec-name" id="result-weather-station-name">-</span>
+              <span class="ec-dist" id="result-weather-station-dist">-</span>
+            </summary>
+            <div class="ec-body">
+              <div class="weather-src-row">
+                <span class="weather-src-badge">풍향·풍속·기온</span>
+                <span id="result-weather-wind-stn-name">-</span>
+                <span class="weather-src-dist" id="result-weather-wind-stn-dist"></span>
+              </div>
+              <p class="weather-src-val" id="result-weather-wind-val">-</p>
+              <div class="weather-src-row" style="margin-top:6px">
+                <span class="weather-src-badge buoy">파고</span>
+                <span id="result-weather-buoy-stn-name">-</span>
+                <span class="weather-src-dist" id="result-weather-buoy-stn-dist"></span>
+              </div>
+              <p class="weather-src-val" id="result-weather-buoy-val">-</p>
+            </div>
+          </details>
+          <div class="island-dist-card hidden" id="island-dist-card">
+            <span class="island-dist-value" id="island-dist-value">-</span>
+          </div>
+        </div>
+
+        <section id="map-result-overlay" class="map-overlay hidden">
+          <div class="map-overlay-header">
+            <span>위치 계산 결과</span>
+            <strong id="result-summary">좌표를 입력해 주세요</strong>
+          </div>
+          <dl class="map-overlay-grid">
+            <div>
+              <dt>최근접 섬</dt>
+              <dd id="result-island">-</dd>
+            </div>
+            <div>
+              <dt>방위</dt>
+              <dd id="result-direction">-</dd>
+            </div>
+            <div>
+              <dt>거리</dt>
+              <dd id="result-distance">-</dd>
+            </div>
+            <div>
+              <dt>위치 설명</dt>
+              <dd id="result-location">-</dd>
+            </div>
+            <div>
+              <dt>최근접 소방서</dt>
+              <dd id="result-fire-station">-</dd>
+            </div>
+            <div>
+              <dt>소방서 거리</dt>
+              <dd id="result-fire-distance">-</dd>
+            </div>
+            <div>
+              <dt>전화번호</dt>
+              <dd id="result-fire-phone">-</dd>
+            </div>
+            <div>
+              <dt>주소</dt>
+              <dd id="result-fire-address">-</dd>
+            </div>
+            <div>
+              <dt>최근접 보건소</dt>
+              <dd id="result-health-center">-</dd>
+            </div>
+            <div>
+              <dt>보건소 거리</dt>
+              <dd id="result-health-center-distance">-</dd>
+            </div>
+            <div>
+              <dt>보건소 전화</dt>
+              <dd id="result-health-center-phone">-</dd>
+            </div>
+            <div>
+              <dt>보건소 주소</dt>
+              <dd id="result-health-center-address">-</dd>
+            </div>
+            <div>
+              <dt>최근접 병원</dt>
+              <dd id="result-hospital">-</dd>
+            </div>
+            <div>
+              <dt>병원 거리</dt>
+              <dd id="result-hospital-distance">-</dd>
+            </div>
+            <div>
+              <dt>병원 전화</dt>
+              <dd id="result-hospital-phone">-</dd>
+            </div>
+            <div>
+              <dt>병원 주소</dt>
+              <dd id="result-hospital-address">-</dd>
+            </div>
+            <div>
+              <dt>최근접 파출소</dt>
+              <dd id="result-kcg-station">-</dd>
+            </div>
+            <div>
+              <dt>파출소 거리</dt>
+              <dd id="result-kcg-station-distance">-</dd>
+            </div>
+            <div>
+              <dt>최근접 출장소</dt>
+              <dd id="result-kcg-branch">-</dd>
+            </div>
+            <div>
+              <dt>출장소 거리</dt>
+              <dd id="result-kcg-branch-distance">-</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section id="report-preview-overlay" class="report-preview hidden collapsed">
+          <div class="report-preview-actions">
+            <button id="toggle-report-button" type="button" class="toggle-report-button" aria-expanded="false" title="보고서 펼치기">
+              <span class="toggle-report-label">보고서 펼치기</span>
+              <span class="toggle-report-icon">▲</span>
+            </button>
+            <button id="copy-report-button" type="button" class="copy-button">보고서 문구 복사</button>
+            <button id="copy-sms-button" type="button" class="copy-button sms-button">보고서→문자</button>
+          </div>
+          <article class="report-paper">
+            <header class="report-header">
+              <h2 id="report-title">[선박명 사고유형] 사고 보고</h2>
+              <div class="report-meta">
+                <div>기준 일시 : <span id="preview-report-datetime">-</span></div>
+                <div>보고 센터 : <span id="preview-report-center">-</span></div>
+              </div>
+            </header>
+            <!-- report-meta는 위에서 제목 아래로 CSS로 배치 -->
+
+            <section class="report-section">
+              <h3>사고개요</h3>
+              <div class="report-box">
+                <p id="preview-accident-summary">위치 계산과 사고 정보를 입력하면 사고개요가 생성됩니다.</p>
+              </div>
+              <p class="report-footnote">* 현지기상 : <span id="preview-weather">-</span></p>
+            </section>
+
+            <section class="report-section">
+              <h3>선박제원</h3>
+              <table class="report-table">
+                <tbody>
+                  <tr>
+                    <th>선명</th>
+                    <td id="preview-vessel-name">-</td>
+                    <th>총톤수</th>
+                    <td id="preview-gross-tonnage">-</td>
+                    <th>선종</th>
+                    <td id="preview-vessel-type">-</td>
+                    <th>소유자 또는 선박회사</th>
+                    <td id="preview-owner-name">-</td>
+                  </tr>
+                  <tr>
+                    <th>선박번호</th>
+                    <td id="preview-vessel-number">-</td>
+                    <th>차량/화물</th>
+                    <td id="preview-cargo-type">-</td>
+                    <th>선적항</th>
+                    <td id="preview-registry-port">-</td>
+                    <th>국적 / 검사기관</th>
+                    <td><span id="preview-nationality">-</span> / <span id="preview-inspection-agency">-</span></td>
+                  </tr>
+                </tbody>
+              </table>
+              <p class="report-footnote">* 승선 현황 : <span id="preview-persons-onboard">-</span></p>
+              <p class="report-footnote">* 보험 현황 : <span id="preview-insurance-status">-</span></p>
+            </section>
+
+            <section class="report-section">
+              <h3>피해사항</h3>
+              <ul class="report-bullets">
+                <li>사고종류 : <span id="preview-accident-type">-</span></li>
+                <li>인명 : <span id="preview-human-damage">-</span></li>
+                <li>오염 : <span id="preview-pollution-damage">-</span></li>
+                <li>선박·시설물 등 : <span id="preview-ship-damage">-</span></li>
+                <li>지연시간 : <span id="preview-delay-time">-</span></li>
+                <li>사고 추정원인 : <span id="preview-suspected-cause">-</span></li>
+              </ul>
+            </section>
+
+            <section class="report-section">
+              <h3>조치사항</h3>
+              <div class="report-box">
+                <p id="preview-accident-details">-</p>
+              </div>
+            </section>
+          </article>
+        </section>
+      </div>
+    </main>
+    <button id="panel-toggle" class="panel-toggle-btn" type="button" title="패널 접기/펼치기">
+      <svg class="toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+  </div>
+
+  <div id="copy-toast"><span class="toast-icon">✓</span><span id="copy-toast-msg"></span></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ol@10.6.1/dist/ol.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

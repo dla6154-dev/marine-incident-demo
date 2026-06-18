@@ -1,0 +1,49 @@
+This project already has working server-side API normalization patterns.
+
+Do not integrate this dataset into the app unless explicitly asked.
+
+When implementation is requested later, add support for the KCG station dataset using:
+- endpoint: https://apis.data.go.kr/1532000/KCG_Station_Position/list_view
+
+Important constraints:
+- this endpoint is XML-only in live testing
+- `type=json` and `resultType=json` did not switch it to JSON
+- success response was:
+  - `resultCode = 40`
+  - `resultMsg = NON_ERROR`
+- do not assume `00` is the only success code for this endpoint
+- the endpoint appears to ignore paging in live tests
+- use one-shot fetch:
+  - `rowsCount=100000`
+  - `startPage=1`
+- this dataset only provides:
+  - station name
+  - longitude
+  - latitude
+- it does not provide address or phone number
+
+Suggested implementation plan:
+1. create `kcg_stations.py`
+2. fetch the XML endpoint server-side
+3. parse XML records from `body > content`
+4. normalize fields:
+   - `name` from `c_myeongching`
+   - `lng` from numeric `c_kyeongdo`
+   - `lat` from numeric `c_wido`
+   - synthetic `id` from name + lng + lat
+5. expose a backend route such as `/api/kcg-stations`
+6. optionally compute nearest station from the current accident coordinate
+7. optionally render map markers
+
+Relevant project files:
+- C:\Users\USER\Documents\해양사고 자동계산\fire_stations.py
+- C:\Users\USER\Documents\해양사고 자동계산\server.py
+- C:\Users\USER\Documents\해양사고 자동계산\app.js
+- C:\Users\USER\Documents\해양사고 자동계산\docs\kcg_station_position_api_prep.md
+- C:\Users\USER\Documents\해양사고 자동계산\docs\kcg_station_position_sample.xml
+
+Reference facts verified on 2026-06-16:
+- totalCount = 97
+- response format = XML
+- first station = 감천파출소
+- last station = 흑산파출소

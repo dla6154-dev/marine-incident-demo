@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<response>
+  <resultCode>40</resultCode>
+  <resultMsg>NON_ERROR</resultMsg>
+  <rowsCount>5</rowsCount>
+  <startPage>1</startPage>
+  <contentsLength>5</contentsLength>
+  <totalCount>97</totalCount>
+  <body>
+    <content>
+      <c_myeongching>감천파출소</c_myeongching>
+      <c_kyeongdo>129.00055810</c_kyeongdo>
+      <c_wido>35.08440914</c_wido>
+    </content>
+    <content>
+      <c_myeongching>감포파출소</c_myeongching>
+      <c_kyeongdo>129.50594100</c_kyeongdo>
+      <c_wido>35.80912733</c_wido>
+    </content>
+    <content>
+      <c_myeongching>강구파출소</c_myeongching>
+      <c_kyeongdo>129.39019100</c_kyeongdo>
+      <c_wido>36.35919371</c_wido>
+    </content>
+    <content>
+      <c_myeongching>강동파출소</c_myeongching>
+      <c_kyeongdo>128.91893680</c_kyeongdo>
+      <c_wido>37.79362696</c_wido>
+    </content>
+    <content>
+      <c_myeongching>강릉파출소</c_myeongching>
+      <c_kyeongdo>128.95138900</c_kyeongdo>
+      <c_wido>37.76309700</c_wido>
+    </content>
+  </body>
+</response>

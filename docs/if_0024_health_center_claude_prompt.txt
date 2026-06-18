@@ -1,0 +1,44 @@
+This project already has a working Safemap integration for fire stations.
+
+Do not change the app yet unless explicitly asked.
+
+When implementation is requested later, add support for Safemap health-center data using:
+- data endpoint: https://safemap.go.kr/openapi2/IF_0024
+- WMS endpoint: https://safemap.go.kr/openapi2/IF_0024_WMS
+
+Important constraints:
+- IF_0024 is a `보건소` dataset, not a full hospital dataset.
+- Reuse the existing Safemap service-key handling pattern already used by `fire_stations.py` and `server.py`.
+- Do not hardcode the service key in frontend code.
+- Prefer the JSON data endpoint for nearest-center logic.
+- Use `lon` / `lat` for distance calculation.
+- Use `x` / `y` or projected coordinates for OpenLayers map markers.
+- Reuse the existing inland exclusion-boundary logic if filtering is needed.
+
+Suggested implementation plan:
+1. create `health_centers.py` modeled after `fire_stations.py`
+2. fetch and normalize all IF_0024 pages server-side
+3. add a backend route such as `/api/health-centers` in `server.py`
+4. return a normalized payload like:
+   - `id` from `hpid`
+   - `name` from `dutyname`
+   - `phone` from `dutytel1`
+   - `address` from `dutyaddr`
+   - `type` from `dutydivname`
+   - `lat` from `lat`
+   - `lng` from `lon`
+   - `x` from numeric `x`
+   - `y` from numeric `y`
+5. optionally compute nearest health center from the current accident coordinate
+6. optionally render markers on the map
+
+Relevant existing files:
+- C:\Users\USER\Documents\해양사고 자동계산\fire_stations.py
+- C:\Users\USER\Documents\해양사고 자동계산\server.py
+- C:\Users\USER\Documents\해양사고 자동계산\app.js
+- C:\Users\USER\Documents\해양사고 자동계산\docs\if_0024_health_center_api_prep.md
+- C:\Users\USER\Documents\해양사고 자동계산\docs\if_0024_health_center_sample.json
+
+Reference:
+- verified live response date: 2026-06-16
+- verified totalCount: 3435

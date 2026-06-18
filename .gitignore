@@ -1,0 +1,15 @@
+.cache/
+__pycache__/
+*.pyc
+tmp_*
+tmp-*
+*.bin
+*.log
+srv_*.txt
+server_*.log
+logo.ai
+symbol_*.ai
+*.png
+*.svg
+preview/
+

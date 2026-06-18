@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>내륙 제외 바운더리 편집기</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.6.1/ol.css">
+  <link rel="stylesheet" href="/boundary-styles.css">
+</head>
+<body>
+  <div class="boundary-shell">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <p class="eyebrow">Boundary Preview</p>
+        <h1>내륙 제외 바운더리 편집기</h1>
+        <p class="lead">
+          지도에서 점을 찍어 제외할 내륙 영역을 그립니다. 바운더리는 브라우저에 자동 저장되며,
+          좌표 배열 또는 GeoJSON으로 복사할 수 있습니다.
+        </p>
+      </div>
+
+      <section class="card">
+        <h2>사용 방법</h2>
+        <ol class="steps">
+          <li><strong>그리기 시작</strong>을 누릅니다.</li>
+          <li>지도에서 꼭짓점을 순서대로 클릭합니다.</li>
+          <li>더블클릭하거나 <strong>현재 폴리곤 완료</strong>를 눌러 닫습니다.</li>
+          <li>필요하면 꼭짓점을 드래그해 수정합니다.</li>
+          <li>완성되면 좌표를 복사해 본 앱에 연결합니다.</li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h2>도구</h2>
+        <div class="button-grid">
+          <button id="start-draw-button" type="button">그리기 시작</button>
+          <button id="finish-draw-button" type="button" class="secondary">현재 폴리곤 완료</button>
+          <button id="undo-point-button" type="button" class="secondary">마지막 점 취소</button>
+          <button id="delete-last-button" type="button" class="secondary">마지막 폴리곤 삭제</button>
+          <button id="clear-all-button" type="button" class="danger">전체 삭제</button>
+          <a id="back-link" class="link-button" href="/">사고 앱으로 돌아가기</a>
+        </div>
+        <p id="draw-status" class="status-text">그리기 대기 중</p>
+      </section>
+
+      <section class="card">
+        <h2>저장 결과</h2>
+        <div class="stats">
+          <div class="stat-box">
+            <span>저장된 폴리곤</span>
+            <strong id="polygon-count">0</strong>
+          </div>
+          <div class="stat-box">
+            <span>현재 점 수</span>
+            <strong id="vertex-count">0</strong>
+          </div>
+        </div>
+        <label class="field-label" for="boundary-coordinates">좌표 배열</label>
+        <textarea id="boundary-coordinates"></textarea>
+        <div class="button-grid compact">
+          <button id="apply-coordinates-button" type="button">좌표 적용</button>
+          <button id="load-default-boundary-button" type="button" class="secondary">기본 바운더리 불러오기</button>
+          <button id="copy-coordinates-button" type="button">좌표 배열 복사</button>
+          <button id="copy-geojson-button" type="button" class="secondary">GeoJSON 복사</button>
+        </div>
+        <p class="helper-text">
+          저장 키: <code>marineIncident.exclusionBoundaries.v1</code>
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>현재 점 목록</h2>
+        <div id="vertex-list" class="vertex-list empty">아직 점이 없습니다.</div>
+      </section>
+    </aside>
+
+    <main class="map-panel">
+      <div class="map-toolbar">
+        <span class="pill">OSM 배경 + VWorld 해안선/WMS</span>
+        <span class="pill">기준 좌표는 파란 점으로 표시</span>
+        <span class="pill">제외 바운더리는 붉은색 폴리곤</span>
+      </div>
+      <div id="map" class="map"></div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ol@10.6.1/dist/ol.js"></script>
+  <script src="/boundary-app.js"></script>
+</body>
+</html>
