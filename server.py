@@ -217,8 +217,12 @@ def get_kcg_stations() -> list[dict]:
 
 
 def _kma_fetch(url: str) -> str:
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
     req = urllib.request.Request(url, headers={"User-Agent": "marine-incident-demo/1.0"})
-    with urllib.request.urlopen(req, timeout=15) as r:
+    with urllib.request.urlopen(req, timeout=15, context=ctx) as r:
         return r.read().decode("euc-kr", errors="replace")
 
 
@@ -363,6 +367,11 @@ def build_vworld_query(
 
 
 def proxy_request(url: str, handler: "DemoRequestHandler") -> None:
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
     request = urllib.request.Request(
         url,
         headers={
@@ -371,7 +380,7 @@ def proxy_request(url: str, handler: "DemoRequestHandler") -> None:
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=30, context=ctx) as response:
             body = response.read()
             content_type = response.headers.get_content_type()
             charset = response.headers.get_content_charset() or "utf-8"
@@ -391,6 +400,14 @@ def proxy_request(url: str, handler: "DemoRequestHandler") -> None:
         handler.send_header("Content-Length", str(len(body)))
         handler.end_headers()
         handler.wfile.write(body)
+    except Exception as exc:
+        print(f"[proxy_request] ERROR {url[:80]}: {exc}")
+        err = str(exc).encode("utf-8")
+        handler.send_response(502)
+        handler.send_header("Content-Type", "text/plain; charset=utf-8")
+        handler.send_header("Content-Length", str(len(err)))
+        handler.end_headers()
+        handler.wfile.write(err)
 
 
 class DemoRequestHandler(SimpleHTTPRequestHandler):
