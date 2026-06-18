@@ -667,6 +667,7 @@ document.getElementById("sample-button").addEventListener("click", () => {
   latInput.value = SAMPLE_COORDINATES.lat;
   lngInput.value = SAMPLE_COORDINATES.lng;
   runSearch();
+  _wsBroadcast();
 });
 
 sampleReportButton.addEventListener("click", () => {
@@ -741,6 +742,7 @@ map.on("click", (event) => {
   userSource.addFeature(new ol.Feature(new ol.geom.Point(ol.proj.fromLonLat([lng, lat]))));
 
   runSearch();
+  _wsBroadcast(); // 좌표 변경을 뷰어에 즉시 전송
 });
 
 [
@@ -2123,6 +2125,7 @@ function fillSampleReport() {
   syncVesselLookup({ allowSingleStatus: false });
   hideVesselNameSuggestions();
   runSearch();
+  _wsBroadcast();
 }
 
 async function parseVesselDataFile(file) {
