@@ -3419,7 +3419,7 @@ function _wsCollectState() {
   return state;
 }
 
-function _wsApplyState(state) {
+function _wsApplyState(state, skipSearch = false) {
   _wsSyncing = true;
   let latChanged = false;
   const prevLat = document.getElementById("lat-input")?.value;
@@ -3442,7 +3442,7 @@ function _wsApplyState(state) {
   }
   _wsSyncing = false;
 
-  if (latChanged) {
+  if (latChanged && !skipSearch) {
     runSearch();
   }
 }
@@ -3561,6 +3561,8 @@ if (IS_VIEW_MODE) {
     if (!isNaN(_urlLat) && !isNaN(_urlLng)) {
       setTimeout(() => {
         _fixMapSize();
+        // SSE state가 먼저 수신됐으면 URL 파라미터로 덮어쓰지 않음
+        if (!_viewerFirstState) return;
         latInput.value = _urlLat.toFixed(6);
         lngInput.value = _urlLng.toFixed(6);
         runSearch();
@@ -3580,7 +3582,8 @@ function _sseConnect() {
       const msg = JSON.parse(e.data);
       if (msg.type === "state" && msg.data && _viewerFirstState) {
         _viewerFirstState = false;
-        _wsApplyState(msg.data);
+        // skipSearch=true: 내부 runSearch 억제, 아래 150ms 타이머에서 1번만 호출
+        _wsApplyState(msg.data, true);
         const lat = parseFloat(msg.data["lat-input"]);
         const lng = parseFloat(msg.data["lng-input"]);
         if (!isNaN(lat) && !isNaN(lng)) {
