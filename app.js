@@ -880,6 +880,8 @@ async function runSearch() {
       return;
     }
     setStatus("계산이 완료되었습니다.");
+    // 좌표 변경 시 활성 선박 항로 패널 재갱신 (현위치→다음기항지 선 업데이트)
+    if (_activeVesselKey) onLiveVesselSelect(_activeVesselKey);
   } catch (error) {
     console.error(error);
     setStatus(`조회 실패: ${error.message}`);
@@ -1117,6 +1119,18 @@ function findNearestFireStation(lat, lng, stations) {
   });
 
   return nearestStation;
+}
+
+function bearingDeg(lat1, lng1, lat2, lng2) {
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+function bearingToCompass(deg) {
+  const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+  return dirs[Math.round(deg / 22.5) % 16];
 }
 
 function haversineNm(lat1, lng1, lat2, lng2) {
@@ -2941,21 +2955,62 @@ operationRouteInput.addEventListener("blur", () => {
   if (name) populateDepartureSelect(name);
 });
 
+// 항로 좌표 경로 데이터 (koast_routes.json)
+let koastRoutes = {};
+
 async function fetchRouteData() {
   try {
-    const res = await fetch(ROUTE_SNAPSHOT_URL);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    const routeLinePayload = json.routeLine || json;
-    const root = routeLinePayload?.response || routeLinePayload;
-    const items = normalizeApiList(root?.body?.items?.item);
-    if (items.length === 0) throw new Error("항로 데이터 없음");
-    routeStopsMap = buildRouteStopsMap(items);
-    operationRouteInput.placeholder = `항로명 검색... (${routeStopsMap.size}개)`;
+    const [snapshotRes, routesRes] = await Promise.all([
+      fetch(ROUTE_SNAPSHOT_URL),
+      fetch("data/koast_routes.json"),
+    ]);
+    if (snapshotRes.ok) {
+      const json = await snapshotRes.json();
+      const routeLinePayload = json.routeLine || json;
+      const root = routeLinePayload?.response || routeLinePayload;
+      const items = normalizeApiList(root?.body?.items?.item);
+      if (items.length > 0) {
+        routeStopsMap = buildRouteStopsMap(items);
+        operationRouteInput.placeholder = `항로명 검색... (${routeStopsMap.size}개)`;
+      }
+    }
+    if (routesRes.ok) {
+      koastRoutes = await routesRes.json();
+    }
   } catch (e) {
     operationRouteInput.placeholder = "항로 불러오기 실패";
     console.warn("항로 데이터 fetch 실패:", e);
   }
+}
+
+// lcns_seawy_cd + nvg_seawy_cd로 koastRoutes에서 항로 경로 찾기
+// koast_routes.json 키 형식: "F02-01-1" (면허코드-세부코드-방향)
+// nvg_drc_cd: 1=정방향, 2=역방향 (없으면 정방향 우선)
+function findKoastRoute(lcns_seawy_cd, nvg_seawy_cd, nvg_drc_cd) {
+  const total = Object.keys(koastRoutes).length;
+  console.log("[findKoastRoute] koastRoutes 키수:", total, "| 입력:", lcns_seawy_cd, nvg_seawy_cd, nvg_drc_cd);
+  if (!lcns_seawy_cd || total === 0) return null;
+
+  const lcd = String(lcns_seawy_cd).trim();
+  const ncd = nvg_seawy_cd ? String(nvg_seawy_cd).padStart(2, "0") : null;
+  const dir = nvg_drc_cd ? String(nvg_drc_cd) : "1";
+
+  if (ncd) {
+    // 정확한 세부항로 + 방향
+    const key1 = `${lcd}-${ncd}-${dir}`;
+    if (koastRoutes[key1]) return koastRoutes[key1];
+    // 반대 방향 폴백
+    const key2 = `${lcd}-${ncd}-${dir === "1" ? "2" : "1"}`;
+    if (koastRoutes[key2]) return koastRoutes[key2];
+    // 세부항로 코드가 있는데 CSV에 없으면 null → orderedStops 직선 폴백으로 위임
+    return null;
+  }
+
+  // 세부항로 코드 없을 때만 면허코드 하위 정방향 중 첫 번째 사용
+  const fallback = Object.keys(koastRoutes)
+    .filter(k => k.startsWith(`${lcd}-`) && k.endsWith("-1"))
+    .sort()[0];
+  return fallback ? koastRoutes[fallback] : null;
 }
 
 fetchRouteData();
@@ -3116,6 +3171,28 @@ const OPRT_LINE_INFO_BASE   = "https://apis.data.go.kr/B554035/oprt-line-info-v2
 const vesselLastUpdateBadge = document.getElementById("vessel-last-update");
 const liveVesselDataMap = new Map(); // key → vessel object
 
+// ferry_route_cache 전체 레코드 메모리 캐시 (1분마다 갱신)
+let _routeCacheItems = [];
+let _routeCacheFetchedAt = null;
+
+async function loadRouteCache() {
+  try {
+    const res = await fetch(
+      `${SUPA_URL}/rest/v1/ferry_route_cache?id=eq.1&select=data,fetched_at&limit=1`,
+      { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } }
+    );
+    const rows = await res.json();
+    if (!rows[0]) return false;
+    const body = rows[0].data?.response?.body ?? rows[0].data?.body ?? rows[0].data;
+    _routeCacheItems = normalizeApiList(body?.items?.item);
+    _routeCacheFetchedAt = rows[0].fetched_at;
+    return true;
+  } catch (e) {
+    console.warn("ferry_route_cache 조회 실패", e);
+    return false;
+  }
+}
+
 function todayYMD() {
   const d = new Date();
   return d.getFullYear().toString() +
@@ -3130,11 +3207,17 @@ function sailTmToTime(sailTm) {
 
 
 async function fetchOperatingVessels() {
-  const ymd = todayYMD();
-  const url = `${FERRY_ROUTE_INFO_BASE}?serviceKey=${LIVE_API_KEY}&pageNo=1&numOfRows=3000&dataType=JSON&rlvtYmd=${ymd}`;
-  const res = await fetch(url);
-  const json = await res.json();
-  const items = normalizeApiList(json.response?.body?.items?.item);
+  await loadRouteCache();
+  let items = _routeCacheItems;
+  // 캐시가 비어있으면 KOAST API 직접 호출로 폴백
+  if (items.length === 0) {
+    console.warn("ferry_route_cache 비어있음 — KOAST API 직접 호출");
+    const ymd = todayYMD();
+    const url = `${FERRY_ROUTE_INFO_BASE}?serviceKey=${LIVE_API_KEY}&pageNo=1&numOfRows=3000&dataType=JSON&rlvtYmd=${ymd}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    items = normalizeApiList(json.response?.body?.items?.item);
+  }
 
   // Group by vessel + sail_tm
   const grouped = new Map();
@@ -3163,6 +3246,7 @@ async function fetchOperatingVessels() {
       lcns_seawy_nm: base.lcns_seawy_nm,
       nvg_seawy_cd: base.nvg_seawy_cd,
       nvg_seawy_nm: base.nvg_seawy_nm,
+      nvg_drc_cd: base.nvg_drc_cd,
       emkt_nope: depRec ? Number(depRec.emkt_nope) : totalEmkt,
       currentAboard: Math.max(0, totalEmkt - totalLvsp),
       vsl_no: base.vsl_no,
@@ -3179,43 +3263,55 @@ async function fetchOperatingVessels() {
   return Array.from(byName.values()).sort((a, b) => a.psnshp_nm.localeCompare(b.psnshp_nm, "ko"));
 }
 
+const _stopsCache = new Map(); // "lcns-nvg" → items[]
+
 async function fetchStopsFromApi({ lcns_seawy_cd, nvg_seawy_cd, lcns_seawy_nm, nvg_seawy_nm }) {
-  // 1차: 면허항로코드 + 운항항로코드 두 코드 모두로 oprt-line-info-v2 조회
-  if (lcns_seawy_cd && nvg_seawy_cd) {
-    const url = `${OPRT_LINE_INFO_BASE}?serviceKey=${LIVE_API_KEY}&pageNo=1&numOfRows=200&dataType=JSON` +
-      `&lcnsSeawyCd=${encodeURIComponent(lcns_seawy_cd)}&nvgSeawyCd=${encodeURIComponent(nvg_seawy_cd)}`;
-    const res = await fetch(url);
-    const json = await res.json();
-    const items = normalizeApiList(json.response?.body?.items?.item);
-    if (items.length > 0) return items;
+  const cacheKey = `${lcns_seawy_cd || ""}-${nvg_seawy_cd || ""}-${lcns_seawy_nm || ""}`;
+  if (_stopsCache.has(cacheKey)) return _stopsCache.get(cacheKey);
+
+  const cache = (items) => { _stopsCache.set(cacheKey, items); return items; };
+
+  // 1차: 운항항로코드 단독 (서브루트 정확한 기항지 순서)
+  if (nvg_seawy_cd) {
+    try {
+      const res = await fetch(`${OPRT_LINE_INFO_BASE}?serviceKey=${LIVE_API_KEY}&pageNo=1&numOfRows=200&dataType=JSON&nvgSeawyCd=${encodeURIComponent(nvg_seawy_cd)}`);
+      const json = await res.json();
+      const items = normalizeApiList(json.response?.body?.items?.item);
+      if (items.length > 0) return cache(items);
+    } catch (_) {}
   }
-  // 2차 폴백: 면허항로코드만으로 조회
+  // 2차 폴백: 면허항로코드만으로 조회 후 nvg_seawy_cd로 필터링
   if (lcns_seawy_cd) {
-    const url = `${OPRT_LINE_INFO_BASE}?serviceKey=${LIVE_API_KEY}&pageNo=1&numOfRows=200&dataType=JSON` +
-      `&lcnsSeawyCd=${encodeURIComponent(lcns_seawy_cd)}`;
-    const res = await fetch(url);
-    const json = await res.json();
-    const items = normalizeApiList(json.response?.body?.items?.item);
-    if (items.length > 0) return items;
+    try {
+      const res = await fetch(`${OPRT_LINE_INFO_BASE}?serviceKey=${LIVE_API_KEY}&pageNo=1&numOfRows=200&dataType=JSON&lcnsSeawyCd=${encodeURIComponent(lcns_seawy_cd)}`);
+      const json = await res.json();
+      let items = normalizeApiList(json.response?.body?.items?.item);
+      if (nvg_seawy_cd) items = items.filter(i => String(i.nvg_seawy_cd) === String(nvg_seawy_cd));
+      if (items.length > 0) return cache(items);
+    } catch (_) {}
   }
   // 3차 폴백: 이름으로 조회
-  const url = `${OPRT_LINE_INFO_BASE}?serviceKey=${LIVE_API_KEY}&pageNo=1&numOfRows=200&dataType=JSON` +
-    `&lcnsSeawyNm=${encodeURIComponent(lcns_seawy_nm || "")}`;
-  const res = await fetch(url);
-  const json = await res.json();
-  return normalizeApiList(json.response?.body?.items?.item);
+  try {
+    const res = await fetch(`${OPRT_LINE_INFO_BASE}?serviceKey=${LIVE_API_KEY}&pageNo=1&numOfRows=200&dataType=JSON&lcnsSeawyNm=${encodeURIComponent(lcns_seawy_nm || "")}`);
+    const json = await res.json();
+    let items = normalizeApiList(json.response?.body?.items?.item);
+    if (nvg_seawy_cd) items = items.filter(i => String(i.nvg_seawy_cd) === String(nvg_seawy_cd));
+    return cache(items);
+  } catch (_) {}
+  return cache([]);
 }
 
 async function fetchVesselSailingRecords(psnshp_nm, sail_tm) {
-  const ymd = todayYMD();
-  const url = `${FERRY_ROUTE_INFO_BASE}?serviceKey=${LIVE_API_KEY}&pageNo=1&numOfRows=500&dataType=JSON` +
-    `&rlvtYmd=${ymd}&psnshpNm=${encodeURIComponent(psnshp_nm)}&sailTm=${sail_tm}`;
-  const res = await fetch(url);
-  const json = await res.json();
-  return normalizeApiList(json.response?.body?.items?.item);
+  // 캐시에서 해당 선박+항차 레코드 필터링 (추가 API 호출 없음)
+  return _routeCacheItems.filter(
+    r => r.psnshp_nm === psnshp_nm && String(r.sail_tm) === String(sail_tm)
+  );
 }
 
+let _activeVesselKey = null; // 현재 선택된 선박 키
+
 async function onLiveVesselSelect(key) {
+  _activeVesselKey = key;
   const v = liveVesselDataMap.get(key);
   if (!v) return;
 
@@ -3308,7 +3404,626 @@ async function onLiveVesselSelect(key) {
     departurePlaceFilterInput.disabled = false;
     console.warn("기항지 조회 실패:", e);
   }
+
+  // ── 출항지/시각 자동입력 + 항로 현황 패널 ─────────────────────
+  await updateRouteStatusPanel(v, sailingRecords);
 }
+
+// ── Supabase port_locations 좌표 조회 ──────────────────────────
+const SUPA_URL  = "https://fnpsaypaxpxyyqmrqwai.supabase.co";
+const SUPA_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZucHNheXBheHB4eXlxbXJxd2FpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5OTc1NzYsImV4cCI6MjA4OTU3MzU3Nn0.yZir2n-zxnbedVdIKwpqJAnWjuwEp96jIYjOY6cNPe4";
+const _portCoordCache = new Map();
+
+async function fetchPortCoord(portcl_cd) {
+  if (!portcl_cd) return null;
+  if (_portCoordCache.has(portcl_cd)) return _portCoordCache.get(portcl_cd);
+  try {
+    const res = await fetch(
+      `${SUPA_URL}/rest/v1/port_locations?portcl_cd=eq.${encodeURIComponent(portcl_cd)}&select=lat,lot&limit=1`,
+      { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } }
+    );
+    const rows = await res.json();
+    const coord = rows[0] ? { lat: Number(rows[0].lat), lng: Number(rows[0].lot) } : null;
+    _portCoordCache.set(portcl_cd, coord);
+    return coord;
+  } catch { return null; }
+}
+
+// ── 별도 항로 레이어 (기존 lineSource와 분리) ──────────────────
+const ferryRouteSource = new ol.source.Vector();
+const ferryRouteLayer  = new ol.layer.Vector({
+  source: ferryRouteSource,
+  style: () => new ol.style.Style({
+    stroke: new ol.style.Stroke({ color: "#4ade80", width: 3, lineDash: [8, 4] }),
+  }),
+  zIndex: 5,
+});
+map.addLayer(ferryRouteLayer);
+
+// 현위치→다음기항지 직선 전용 레이어
+const curToNextSource = new ol.source.Vector();
+const curToNextLayer  = new ol.layer.Vector({
+  source: curToNextSource,
+  zIndex: 8,
+});
+map.addLayer(curToNextLayer);
+
+function makeNextPortCallout(portName, distNm) {
+  const line1 = portName || "";
+  const line2 = `→ ${distNm.toFixed(1)} NM`;
+  const dpr = window.devicePixelRatio || 1;
+  const pad = 8, gap = 4, leaderH = 28;
+  const tmpC = document.createElement("canvas");
+  const tmpX = tmpC.getContext("2d");
+  tmpX.font = `bold ${11 * dpr}px Pretendard, sans-serif`;
+  const w1 = tmpX.measureText(line1).width;
+  tmpX.font = `${11 * dpr}px Pretendard, sans-serif`;
+  const w2 = tmpX.measureText(line2).width;
+  const boxW = Math.max(w1, w2) + pad * 2 * dpr;
+  const boxH = (11 * 2 + gap + pad * 2) * dpr;
+  const totalH = (boxH + leaderH * dpr);
+  const canvas = document.createElement("canvas");
+  canvas.width = boxW + 2 * dpr;
+  canvas.height = totalH + 2 * dpr;
+  const ctx = canvas.getContext("2d");
+  const cx = canvas.width / 2;
+
+  // 점선 리더
+  ctx.save();
+  ctx.setLineDash([3 * dpr, 2 * dpr]);
+  ctx.strokeStyle = "#f97316";
+  ctx.lineWidth = 1.5 * dpr;
+  ctx.beginPath();
+  ctx.moveTo(cx, canvas.height - dpr);
+  ctx.lineTo(cx, boxH + dpr);
+  ctx.stroke();
+  ctx.restore();
+
+  // 말풍선 박스
+  const rx = 4 * dpr;
+  ctx.fillStyle = "#fff7ed";
+  ctx.strokeStyle = "#f97316";
+  ctx.lineWidth = 1.5 * dpr;
+  ctx.beginPath();
+  ctx.roundRect(dpr, dpr, boxW, boxH, rx);
+  ctx.fill();
+  ctx.stroke();
+
+  // 기항지명
+  ctx.fillStyle = "#c2410c";
+  ctx.font = `bold ${11 * dpr}px Pretendard, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillText(line1, cx, (pad + 1) * dpr);
+
+  // 거리
+  ctx.font = `${11 * dpr}px Pretendard, sans-serif`;
+  ctx.fillText(line2, cx, (pad + 11 + gap) * dpr);
+
+  return { canvas, anchorY: 1.0 };
+}
+
+function drawCurToNextLine(curLat, curLng, nextCoord, distNm, portName) {
+  curToNextSource.clear();
+  if (!nextCoord || isNaN(curLat) || isNaN(curLng)) return;
+
+  const from = ol.proj.fromLonLat([curLng, curLat]);
+  const to   = ol.proj.fromLonLat([nextCoord.lng, nextCoord.lat]);
+  const brg  = bearingDeg(curLat, curLng, nextCoord.lat, nextCoord.lng);
+  const brgRad = brg * Math.PI / 180;
+  const orange = "#f97316";
+
+  // 1. 주 선
+  const lineFeature = new ol.Feature({ geometry: new ol.geom.LineString([from, to]) });
+  lineFeature.setStyle(new ol.style.Style({
+    stroke: new ol.style.Stroke({ color: orange, width: 3 }),
+  }));
+  curToNextSource.addFeature(lineFeature);
+
+  // 2. 끝점 화살표 (채운 삼각형)
+  const arrowFeat = new ol.Feature({ geometry: new ol.geom.Point(to) });
+  arrowFeat.setStyle(new ol.style.Style({
+    image: new ol.style.RegularShape({
+      points: 3,
+      radius: 13,
+      fill: new ol.style.Fill({ color: orange }),
+      rotation: brgRad,
+    }),
+  }));
+  curToNextSource.addFeature(arrowFeat);
+
+  // 3. 선 전체에 일정 간격으로 채운 삼각형 화살표
+  const step = 0.10;
+  for (let t = 0.10; t < 0.92; t += step) {
+    const cx = from[0] + (to[0] - from[0]) * t;
+    const cy = from[1] + (to[1] - from[1]) * t;
+    const chevron = new ol.Feature({ geometry: new ol.geom.Point([cx, cy]) });
+    chevron.setStyle(new ol.style.Style({
+      image: new ol.style.RegularShape({
+        points: 3,
+        radius: 9,
+        fill: new ol.style.Fill({ color: orange }),
+        stroke: new ol.style.Stroke({ color: "#fff", width: 1 }),
+        rotation: brgRad,
+      }),
+    }));
+    curToNextSource.addFeature(chevron);
+  }
+
+  // 4. 목적지 말풍선 (점선 리더 + 박스)
+  const { canvas } = makeNextPortCallout(portName || "", distNm);
+  const calloutFeat = new ol.Feature({ geometry: new ol.geom.Point(to) });
+  calloutFeat.setStyle(new ol.style.Style({
+    image: new ol.style.Icon({
+      img: canvas,
+      imgSize: [canvas.width, canvas.height],
+      anchor: [0.5, 1.0],
+      anchorXUnits: "fraction",
+      anchorYUnits: "fraction",
+      scale: 1 / (window.devicePixelRatio || 1),
+    }),
+  }));
+  curToNextSource.addFeature(calloutFeat);
+}
+
+async function updateRouteStatusPanel(v, sailingRecords) {
+  const panel = document.getElementById("route-status-panel");
+  if (!panel) return;
+
+  // 1. 출항 기록 (nvg_stts_cd=4) 시간순 정렬
+  const depRecords = sailingRecords
+    .filter(r => r.portcl_nm && String(r.nvg_stts_cd) === "4")
+    .sort((a, b) => (a.nvg_stts_chg_dt || "") < (b.nvg_stts_chg_dt || "") ? -1 : 1);
+
+  const firstDep = depRecords[0];    // 최초 출항 (출항지)
+  const lastDep  = depRecords[depRecords.length - 1]; // 가장 최근 출항 (현재 위치 추정)
+
+  // 출항지/시각 보고서 자동입력 — 가장 최근 지난 기항지(lastDep)를 출항지로
+  if (lastDep) {
+    departurePlaceInput.value = lastDep.portcl_nm;
+    departurePlaceFilterInput.value = lastDep.portcl_nm;
+  } else if (firstDep) {
+    departurePlaceInput.value = firstDep.portcl_nm;
+    departurePlaceFilterInput.value = firstDep.portcl_nm;
+  }
+  const depForTime = lastDep || firstDep;
+  if (depForTime) {
+    departureTimeInput.value = depForTime.nvg_stts_chg_dt.slice(11, 16);
+  }
+
+  // 2. 기항지 순서 목록 (oprt-line-info-v2)
+  // - orderedStops: 현재 서브루트(nvg_seawy_cd) 기준 → 다음 기항지 계산용
+  // - allLcnsStops: 면허항로 전체 기항지 → 지도 항로도 표시용
+  let orderedStops = [], allLcnsStops = [];
+  const dedup = (stops) => {
+    const seen = new Set();
+    return stops
+      .sort((a, b) => Number(a.portcl_sn) - Number(b.portcl_sn))
+      .filter(s => {
+        if (!s.portcl_cd && !s.portcl_nm) return false;
+        const k = s.portcl_cd || s.portcl_nm;
+        if (seen.has(k)) return false;
+        seen.add(k); return true;
+      });
+  };
+  try {
+    const stops = await fetchStopsFromApi({
+      lcns_seawy_cd: v.lcns_seawy_cd, nvg_seawy_cd: v.nvg_seawy_cd,
+      lcns_seawy_nm: v.lcns_seawy_nm, nvg_seawy_nm: v.nvg_seawy_nm,
+    });
+    orderedStops = dedup(stops);
+  } catch (e) { console.warn("기항지 목록 조회 실패", e); }
+  try {
+    // 면허항로 전체 기항지 (nvg_seawy_cd 필터 없이)
+    const allStops = await fetchStopsFromApi({
+      lcns_seawy_cd: v.lcns_seawy_cd,
+      lcns_seawy_nm: v.lcns_seawy_nm,
+    });
+    allLcnsStops = dedup(allStops);
+  } catch (e) { console.warn("면허항로 기항지 조회 실패", e); }
+
+  // 출항지 드롭다운 옵션을 이 항로의 기항지 목록으로 설정
+  if (orderedStops.length > 0) {
+    departureSuggestion.setOptions(orderedStops.map(s => s.portcl_nm).filter(Boolean));
+    departurePlaceFilterInput.placeholder = `출항지 검색... (${orderedStops.length}개)`;
+  }
+
+  // 3. 현재 위치 (마지막 출항 기항지) → 다음 기항지 추정
+  // nvg_drc_cd: 1=정방향(순서대로), 2=역방향(거꾸로)
+  const isReverse = String(v.nvg_drc_cd) === "2";
+  let nextStop = null;
+  if (lastDep && orderedStops.length > 0) {
+    const curIdx = orderedStops.findIndex(
+      s => s.portcl_cd === lastDep.portcl_cd || s.portcl_nm === lastDep.portcl_nm
+    );
+    if (isReverse) {
+      if (curIdx > 0) nextStop = orderedStops[curIdx - 1];
+    } else {
+      if (curIdx >= 0 && curIdx < orderedStops.length - 1) nextStop = orderedStops[curIdx + 1];
+    }
+  }
+
+  // 4. 좌표 조회 및 거리 계산
+  const depCoord  = lastDep  ? await fetchPortCoord(lastDep.portcl_cd)  : null;
+  const nextCoord = nextStop ? await fetchPortCoord(nextStop.portcl_cd) : null;
+
+  // 현재 선박 좌표 (입력값) → 다음 기항지 거리
+  const curLat = parseFloat(latInput.value);
+  const curLng = parseFloat(lngInput.value);
+  const hasCurrentPos = !isNaN(curLat) && !isNaN(curLng);
+
+  let distNm = null;
+  if (hasCurrentPos && nextCoord) {
+    distNm = haversineNm(curLat, curLng, nextCoord.lat, nextCoord.lng);
+  } else if (depCoord && nextCoord) {
+    // 현재 좌표 없으면 마지막 기항지 기준
+    distNm = haversineNm(depCoord.lat, depCoord.lng, nextCoord.lat, nextCoord.lng);
+  }
+
+  // 5. 패널 업데이트
+  const lastUpd = (lastDep?.nvg_stts_chg_dt || v.lastUpdateDt || "").slice(11, 16);
+  document.getElementById("rsp-vessel-nm").textContent = v.psnshp_nm || "-";
+  document.getElementById("rsp-route-nm").textContent  = v.lcns_seawy_nm || v.nvg_seawy_nm || "-";
+  document.getElementById("rsp-dep").textContent =
+    lastDep ? `${lastDep.portcl_nm} (${lastDep.nvg_stts_chg_dt.slice(11, 16)} 출항)` : "-";
+  document.getElementById("rsp-next").textContent  = nextStop?.portcl_nm || (lastDep ? "마지막 기항지" : "-");
+  const distLabel = hasCurrentPos && nextCoord ? "현위치→" : (depCoord && nextCoord ? "출항지→" : "");
+  document.getElementById("rsp-dist").textContent  = distNm != null ? `${distLabel}${nextStop?.portcl_nm || ""} ${distNm.toFixed(1)} NM` : "-";
+  document.getElementById("rsp-updated").textContent = lastUpd ? `마지막 상태 ${lastUpd}` : "";
+  panel.classList.remove("hidden");
+
+  // 6. 지도에 항로 표시
+  ferryRouteSource.clear();
+  curToNextSource.clear();
+
+  // koast_routes.json에서 항로 경로 좌표 찾기
+  console.log("[항로] lcns_seawy_cd=", v.lcns_seawy_cd, "nvg_seawy_cd=", v.nvg_seawy_cd, "nvg_drc_cd=", v.nvg_drc_cd, "lcns_nm=", v.lcns_seawy_nm);
+  const routePath = findKoastRoute(v.lcns_seawy_cd, v.nvg_seawy_cd, v.nvg_drc_cd);
+
+  if (routePath && routePath.length >= 2) {
+    // koast_routes 경로로 전체 항로 그리기 (회색 점선)
+    const allProjCoords = routePath.map(p => ol.proj.fromLonLat([p[1], p[0]]));
+    ferryRouteSource.addFeature(new ol.Feature({
+      geometry: new ol.geom.LineString(allProjCoords),
+      highlight: false,
+    }));
+
+    // 현재 위치 → 다음 기항지 직선 (별도 레이어)
+    if (hasCurrentPos && nextCoord && distNm != null) {
+      drawCurToNextLine(curLat, curLng, nextCoord, distNm, nextStop?.portcl_nm);
+    } else {
+      curToNextSource.clear();
+    }
+
+    // 기항지별 실제 출항 시각 맵 (portcl_nm → HH:MM)
+    const depTimeMap = new Map();
+    for (const r of depRecords) {
+      if (r.portcl_nm && r.nvg_stts_chg_dt)
+        depTimeMap.set(r.portcl_nm, r.nvg_stts_chg_dt.slice(11, 16));
+    }
+
+    // 기항지 마커 (orderedStops 기준)
+    const stopCoords = await Promise.all(orderedStops.map(s => fetchPortCoord(s.portcl_cd)));
+    stopCoords.forEach((c, i) => {
+      if (!c?.lat || !c?.lng) return;
+      const nm = orderedStops[i].portcl_nm;
+      const isFirst = i === 0, isLast = i === orderedStops.length - 1;
+      const isCurrent = nm === lastDep?.portcl_nm;
+      const isNext    = nm === nextStop?.portcl_nm;
+      const isPassed  = depTimeMap.has(nm);
+      const depTime   = depTimeMap.get(nm);
+      // 통과한 기항지·현재·다음 모두 하이라이트
+      const isHighlight = isCurrent || isNext || isPassed || isFirst || isLast;
+      const color = isCurrent ? "#f59e0b" : isNext ? "#2563eb" : isPassed ? "#16a34a" : "#94a3b8";
+      const r = isCurrent ? 9 : isHighlight ? 7 : 4;
+      // 라벨: 통과시각 있으면 "포트명\nHH:MM 출항", 다음 기항지는 "포트명\n▶ 다음"
+      const label = depTime
+        ? `${nm}\n${depTime} 출항`
+        : isNext ? `${nm}\n▶ 다음` : nm;
+      const feat = new ol.Feature({ geometry: new ol.geom.Point(ol.proj.fromLonLat([c.lng, c.lat])) });
+      feat.setStyle(new ol.style.Style({
+        image: new ol.style.Circle({
+          radius: r,
+          fill: new ol.style.Fill({ color }),
+          stroke: new ol.style.Stroke({ color: "#fff", width: 2 }),
+        }),
+        text: isHighlight ? new ol.style.Text({
+          text: label,
+          font: "bold 11px Pretendard, sans-serif",
+          fill: new ol.style.Fill({ color: "#1e293b" }),
+          stroke: new ol.style.Stroke({ color: "#fff", width: 3 }),
+          offsetY: -16,
+          textAlign: "center",
+        }) : null,
+      }));
+      ferryRouteSource.addFeature(feat);
+    });
+
+    // 전체 항로가 화면에 보이도록
+    const ext = ol.extent.boundingExtent(allProjCoords);
+    map.getView().fit(ext, { padding: [80, 80, 80, 300], duration: 600, maxZoom: 11 });
+
+  } else if (orderedStops.length >= 2) {
+    // koast_routes 없으면 기항지 좌표 직선 연결로 폴백
+    const coords = await Promise.all(orderedStops.map(s => fetchPortCoord(s.portcl_cd)));
+    const validCoords = coords.map((c, i) => ({ ...c, name: orderedStops[i].portcl_nm })).filter(c => c.lat && c.lng);
+    if (validCoords.length >= 2) {
+      ferryRouteSource.addFeature(new ol.Feature({
+        geometry: new ol.geom.LineString(validCoords.map(c => ol.proj.fromLonLat([c.lng, c.lat]))),
+      }));
+      if (hasCurrentPos && nextCoord && distNm != null) {
+        drawCurToNextLine(curLat, curLng, nextCoord, distNm, nextStop?.portcl_nm);
+      } else {
+        curToNextSource.clear();
+      }
+      const ext = ol.extent.boundingExtent(validCoords.map(c => ol.proj.fromLonLat([c.lng, c.lat])));
+      map.getView().fit(ext, { padding: [80, 80, 80, 300], duration: 600, maxZoom: 11 });
+    }
+  }
+}
+
+// ──────────────────────────────────────────────
+// 조류 레이어
+// ──────────────────────────────────────────────
+const TIDAL_API_KEY = "4063f2c2047eaf451ca47bba11369c953e228d145a62d2be87ad7af1d0f3960f"; // ← 만료 시 교체
+const TIDAL_BASE = "https://apis.data.go.kr/1192136/crntFcstTime/GetCrntFcstTimeApiService";
+
+// 예보지점 목록 (obsCode, 지점명) — 좌표는 API 응답에서 수집 후 캐시
+const TIDAL_STATIONS = [
+  ["06SA18","경치동수도"],["06YME1","광도동측"],["06YS04","서수도(여자만)"],["06YS09","거금수도"],
+  ["18MTC10","초도남측"],["01MP-2","목포구"],["01SR-1","사량도북측"],["02JJ-1","제주항"],
+  ["03DS-1","장안서"],["03PT-1","아산만입구"],["05GH-5","장봉수도"],["06GH01","득량만입구"],
+  ["06GH07","거금도남측"],["06GS07","고군산군도"],["06JD01","외병도"],["06SA01","면도수도"],
+  ["06SA10","팔구포북측"],["06YME4","보길도남서측"],["06YME5","장죽수도"],["06YME6","맹골수도"],
+  ["06YME8","매물수도"],["06YS03","신강수도"],["07DS02","대산항"],["07GG03","석모수도"],
+  ["07GG06","인천갑문"],["07GG11","덕적도"],["07JB12","수도수도북측"],["07JB14","수도수도"],
+  ["07KS01","원산도"],["07KS03","외연열도"],["07TA03","태안"],["07TA04","만리포"],
+  ["07TA05","안흥"],["07TA09","격렬비열도"],["08F","추자도남서측"],["08GA01","감천항입구"],
+  ["08GY-5","묘도수도"],["08JJ03","성산포"],["08JJ07","서귀포"],["08JJ13","애월항북측"],
+  ["09IC01","인천남항"],["09IC07","경인아라뱃길"],["10ED01","이어도"],["10GD03","가덕수도"],
+  ["10MP07","시아해"],["11JD02","정등해"],["11JD09","마로해"],["12JB11","비인만"],
+  ["12JB14","군산항입구"],["12YS08","광양항"],["13PT01","평택항"],["13WD01","소안도"],
+  ["14BP01","병풍도북측"],["14IC03","자월도북측"],["14IC04","이작도서측"],["14JD03","정등해북측"],
+  ["15HD05","하동항"],["15LTC01","염하수도"],["15LTC02","어청도서측"],["15LTC03","위도동측"],
+  ["15LTC04","홍도항로"],["15LTC05","만재도서측"],["15LTC06","거차수도"],["15LTC07","독거군도동측"],
+  ["15LTC08","장고도수도"],["15LTC09","금당수도"],["15LTC10","여수해만"],["15SE01","노량수도"],
+  ["16DJ04","시화방조제"],["16LTC01","인천대교"],["16LTC02","인천동수도입구"],["16LTC03","천수만"],
+  ["16LTC04","역도"],["16LTC05","목포북항북측"],["16LTC06","시아해북측"],["16LTC07","장산도동측"],
+  ["16LTC08","광양항제1항로"],["16LTC09","통영해만"],["16LTC10","비진도남측"],["16LTC11","부도수도"],
+  ["16LTC12","낙동포"],["16LTC13","부산항입구"],["16LTC14","울산신항"],["16MTC01","미조수도"],
+  ["16MTC16","지심도서측"],["17LTC01","인천신항입구"],["17LTC02","경기만북수도"],["17LTC03","자월도남측"],
+  ["17LTC04","문갑도동측"],["17LTC05","울도"],["17LTC06","가로림만입구"],["17LTC07","울도남측"],
+  ["17LTC08","녹도북측"],["17LTC09","십이동파도"],["17LTC10","고군산군도북측"],["17LTC11","가사도동측"],
+  ["17LTC12","소안수도"],["17LTC13","완도통항분리대"],["17LTC14","욕지도북측"],["17MTC14","위도서측"],
+  ["17MTC19","안마도서측"],["17MTC20","안마도동측"],["18LTC01","난지도북측"],["18LTC02","와도서측"],
+  ["18LTC03","안좌도북측"],["18LTC04","비금수도"],["18LTC05","흑일도남측"],["18LTC06","여수해협"],
+  ["18LTC07","여수해만입구"],["18LTC08","두미도북측"],["18LTC09","사량도동측"],["18LTC10","가조도수도"],
+  ["18LTC11","진해만(통영항로)"],["18LTC12","거제도동측"],["18LTC13","해운대"],["18LTC14","대왕암남측"],
+  ["19LTC01","화성방조제"],["19LTC02","외연도동측"],["19LTC03","재원동수도"],["19LTC04","증도동측"],
+  ["19LTC05","매화도서측"],["19LTC06","하의수도"],["19LTC07","청산도동측"],["19LTC08","대병풍도서측"],
+  ["19LTC09","초도동측"],["19LTC10","손죽도북측"],["19LTC11","나로도동측"],["19LTC12","여수해만남측"],
+  ["19LTC13","대병대도동측"],["19LTC14","광안리"],["JejuStrait","추자도동측"],
+  ["20LTC01","어불도서측"],["20LTC02","독거군도북측"],["20LTC03","외모군도남측"],["20LTC04","영흥도서측"],
+  ["20LTC05","함평만입구"],["20LTC06","금오열도남측"],["20LTC07","자월도북서측"],["20LTC08","우이수도"],
+  ["20LTC09","송이도북측"],["20LTC11","덕적군도서측"],["20LTC12","수우도서측"],["20LTC13","관리도"],
+  ["20LTC14","가덕도남측"],["20LTC15","거금도동측"],["GwangyangHang","광양항입구"],
+  ["21LTC01","태종대남측"],["21LTC02","북형제도남측"],["21LTC03","가덕도남서측"],["21LTC04","부산항신항"],
+  ["21LTC05","저도서측"],["21LTC06","내도동측"],["21LTC07","칠천도북서측"],["21LTC08","장사도북측"],
+  ["21LTC09","용초도북측"],["21LTC10","견내량해협"],["21LTC11","오곡도북측"],["21LTC12","곤리도남측"],
+  ["21LTC13","사량도북동측"],["21LTC14","신수도동측"],["22EW01","대화사도서측"],
+  ["22LTC01","삼천포-제주항로"],["22LTC02","대방수도"],["22LTC03","노량수도동측"],["22LTC04","외수도"],
+  ["22LTC05","금오수도"],["22LTC06","백야도동측"],["22LTC07","백야수도"],["22LTC08","외나로도서측"],
+  ["22LTC09","손죽도서측"],["22LTC10","소록도동측"],["22LTC12","마량항"],["22LTC13","청산도서측"],
+  ["22LTC14","황제도동측"],["22LTC15","광양항A호등부표"],["22MTC03","제주해협"],
+  ["23GA01","안면도서측"],["23LTC01","우도북서측"],["23LTC02","제주도서측"],["23LTC03","백일도동측"],
+  ["23LTC04","어룡도북측"],["23LTC05","율도북동측"],["23LTC06","대야도동측"],["23LTC07","우이도남측"],
+  ["23LTC08","장산도서측"],["23LTC09","달리도서측"],["23YG03","외나로도남측"],
+  ["24GW02","완도항"],["24LTC01","재원도남서측"],["24LTC02","어의도북측"],["24LTC03","안마도남측"],
+  ["24LTC04","거륜도남서측"],["24LTC05","말도남측"],["24LTC06","소횡경도북측"],["24LTC07","십이동파도남동측"],
+  ["24LTC08","대화사도남측"],["24LTC09","삽시도북측"],["24LTC10","외파수도남측"],["24LTC11","가의도북동측"],
+  ["24TJ02","가로림만"],["24TJ04","입파도"],["24TJ05","아산만28호등부표"],["MyeongYang_Sudo","명량수도"],
+  ["98HG-1","횡간수도"],
+];
+
+// 좌표 캐시 (obsCode → {lat, lng})
+const _tidalCoordCache = new Map();
+// 조류 데이터 캐시 (obsCode → {crdir, crsp, predcDt, ts})
+const _tidalDataCache = new Map();
+const TIDAL_CACHE_TTL = 5 * 60 * 1000; // 5분
+
+let _tidalLayerOn = false;
+
+const tidalSource = new ol.source.Vector();
+const tidalLayer = new ol.layer.Vector({ source: tidalSource, zIndex: 15 });
+map.addLayer(tidalLayer);
+
+function tidalDirToDeg(crdir) {
+  const v = parseFloat(crdir);
+  if (!isNaN(v)) return v;
+  const map = {"북":0,"북북동":22.5,"북동":45,"동북동":67.5,"동":90,"동남동":112.5,"남동":135,"남남동":157.5,
+    "남":180,"남남서":202.5,"남서":225,"서남서":247.5,"서":270,"서북서":292.5,"북서":315,"북북서":337.5};
+  return map[String(crdir).trim()] ?? 0;
+}
+
+function makeTidalArrow(name, crdir, crsp) {
+  const dpr = window.devicePixelRatio || 1;
+  const brgRad = crdir * Math.PI / 180;
+  const spd = parseFloat(crsp) || 0;
+  const r = 14 * dpr;
+  const color = spd >= 30 ? "#ef4444" : spd >= 15 ? "#f97316" : spd >= 5 ? "#22c55e" : "#94a3b8";
+  const size = (r * 2 + 8) * dpr;
+  const canvas = document.createElement("canvas");
+  canvas.width = size + 40 * dpr;
+  canvas.height = size + 28 * dpr;
+  const ctx = canvas.getContext("2d");
+  const cx = canvas.width / 2, cy = (size / 2) + 4 * dpr;
+
+  // 원형 배경
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + 3 * dpr, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5 * dpr;
+  ctx.stroke();
+
+  // 화살표
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(brgRad);
+  ctx.fillStyle = color;
+  const ar = r * 0.75;
+  ctx.beginPath();
+  ctx.moveTo(0, -ar);
+  ctx.lineTo(ar * 0.45, ar * 0.55);
+  ctx.lineTo(0, ar * 0.25);
+  ctx.lineTo(-ar * 0.45, ar * 0.55);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // 유속 텍스트
+  ctx.fillStyle = "#1e293b";
+  ctx.font = `bold ${10 * dpr}px Pretendard,sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 2 * dpr;
+  const kt = (spd / 51.44).toFixed(1);
+  ctx.strokeText(`${kt}kt`, cx, cy + r + 5 * dpr);
+  ctx.fillText(`${kt}kt`, cx, cy + r + 5 * dpr);
+
+  return canvas;
+}
+
+async function fetchTidalCurrentNow(obsCode) {
+  const cached = _tidalDataCache.get(obsCode);
+  if (cached && Date.now() - cached.ts < TIDAL_CACHE_TTL) return cached;
+
+  const now = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const reqDate = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}`;
+  const url = `${TIDAL_BASE}?serviceKey=${TIDAL_API_KEY}&obsCode=${encodeURIComponent(obsCode)}&numOfRows=25&type=json&min=60&reqDate=${reqDate}`;
+  try {
+    const res = await fetch(url);
+    const json = await res.json();
+    const body = json?.response?.body ?? json?.body;
+    const items = body?.items?.item ?? [];
+    const list = Array.isArray(items) ? items : (items && typeof items === "object" ? [items] : []);
+    if (!list.length) return null;
+
+    // 현재 시각과 가장 가까운 항목 선택
+    const nowMs = now.getTime();
+    let best = null, bestDiff = Infinity;
+    for (const it of list) {
+      if (!it.predcDt && !it.obsrvnDt) continue;
+      const dt = new Date((it.predcDt || it.obsrvnDt).replace(" ", "T") + ":00");
+      const diff = Math.abs(dt.getTime() - nowMs);
+      if (diff < bestDiff) { bestDiff = diff; best = it; }
+    }
+    if (!best) return null;
+
+    // 좌표도 캐시
+    if (best.lat && best.lot && !_tidalCoordCache.has(obsCode)) {
+      _tidalCoordCache.set(obsCode, { lat: parseFloat(best.lat), lng: parseFloat(best.lot) });
+    }
+
+    const result = {
+      crdir: tidalDirToDeg(best.crdir),
+      crsp: parseFloat(best.crsp) || 0,
+      predcDt: best.predcDt || best.obsrvnDt || "",
+      ts: Date.now(),
+    };
+    _tidalDataCache.set(obsCode, result);
+    return result;
+  } catch { return null; }
+}
+
+let _tidalRefreshId = 0;
+async function refreshTidalLayer() {
+  if (!_tidalLayerOn) return;
+  const thisId = ++_tidalRefreshId;
+
+  const extent = map.getView().calculateExtent(map.getSize());
+  const [minX, minY, maxX, maxY] = ol.proj.transformExtent(extent, "EPSG:3857", "EPSG:4326");
+
+  const inView = TIDAL_STATIONS.filter(([code]) => {
+    const c = _tidalCoordCache.get(code);
+    return c && c.lng >= minX && c.lng <= maxX && c.lat >= minY && c.lat <= maxY;
+  });
+  const uncached = TIDAL_STATIONS.filter(([code]) => !_tidalCoordCache.has(code));
+
+  function addTidalFeature(code, name, data) {
+    const coord = _tidalCoordCache.get(code);
+    if (!coord || coord.lng < minX || coord.lng > maxX || coord.lat < minY || coord.lat > maxY) return;
+    const canvas = makeTidalArrow(name, data.crdir, data.crsp);
+    const feat = new ol.Feature({ geometry: new ol.geom.Point(ol.proj.fromLonLat([coord.lng, coord.lat])) });
+    feat.setStyle(new ol.style.Style({
+      image: new ol.style.Icon({
+        src: canvas.toDataURL(),
+        scale: 1 / (window.devicePixelRatio || 1),
+        anchor: [0.5, 0.5],
+        anchorXUnits: "fraction",
+        anchorYUnits: "fraction",
+      }),
+      text: new ol.style.Text({
+        text: name,
+        font: "10px Pretendard,sans-serif",
+        fill: new ol.style.Fill({ color: "#374151" }),
+        stroke: new ol.style.Stroke({ color: "#fff", width: 2 }),
+        offsetY: 28,
+        textAlign: "center",
+      }),
+    }));
+    tidalSource.addFeature(feat);
+  }
+
+  // 한 번만 clear, 이후 각 요청 완료 즉시 개별 추가 (스트리밍 렌더링)
+  tidalSource.clear();
+
+  const targets = [
+    ...inView,
+    ...uncached.slice(0, 20),
+  ];
+
+  targets.forEach(([code, name]) => {
+    fetchTidalCurrentNow(code).then(data => {
+      if (thisId !== _tidalRefreshId) return; // stale refresh → 무시
+      if (data) addTidalFeature(code, name, data);
+    });
+  });
+}
+
+// 토글 버튼
+document.getElementById("tidal-toggle-btn")?.addEventListener("click", () => {
+  _tidalLayerOn = !_tidalLayerOn;
+  const btn = document.getElementById("tidal-toggle-btn");
+  const label = document.getElementById("tidal-toggle-label");
+  if (_tidalLayerOn) {
+    btn.style.background = "rgba(14,165,233,0.15)";
+    btn.style.borderColor = "#0ea5e9";
+    btn.style.color = "#0369a1";
+    label.textContent = "조류 ON";
+    refreshTidalLayer();
+  } else {
+    btn.style.background = "rgba(255,255,255,0.95)";
+    btn.style.borderColor = "#cbd5e1";
+    btn.style.color = "#374151";
+    label.textContent = "조류";
+    tidalSource.clear();
+  }
+});
+
+// 지도 이동/줌 시 자동 갱신
+map.on("moveend", () => { if (_tidalLayerOn) refreshTidalLayer(); });
+
+// 1시간마다 자동 갱신 (데이터가 1시간 단위)
+setInterval(() => {
+  if (_tidalLayerOn) {
+    _tidalDataCache.clear(); // 캐시 무효화 후 재조회
+    refreshTidalLayer();
+  }
+}, 30 * 60 * 1000);
 
 async function initLiveVesselSelect() {
   vesselNameInput.placeholder = "조회 중...";
@@ -3321,6 +4036,11 @@ async function initLiveVesselSelect() {
       return { label, key: v.key };
     });
     vesselNameInput.placeholder = `선박명 또는 운항선박 검색... (운항 ${vessels.length}척)`;
+    // fetched_at 배지 표시
+    if (_routeCacheFetchedAt) {
+      vesselLastUpdateBadge.textContent = `갱신 ${_routeCacheFetchedAt.slice(11, 16)}`;
+      vesselLastUpdateBadge.classList.remove("hidden");
+    }
   } catch (e) {
     vesselNameInput.placeholder = "선박명 또는 운항선박 검색...";
     console.warn("운항 선박 조회 실패:", e);
@@ -3328,6 +4048,11 @@ async function initLiveVesselSelect() {
 }
 
 initLiveVesselSelect();
+// 1분마다 캐시 갱신 + 선박 목록 자동 업데이트 + 항로도 갱신
+setInterval(async () => {
+  await initLiveVesselSelect();
+  if (_activeVesselKey) await onLiveVesselSelect(_activeVesselKey);
+}, 60_000);
 
 // 모든 input 포커스 시 텍스트 전체 선택
 document.addEventListener("focusin", e => {
