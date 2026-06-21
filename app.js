@@ -4202,14 +4202,19 @@ function _wsSetStatus(connected) {
 // (연결이 500ms 만에 끊겨도 runSearch 예약은 유지됨)
 let _viewerFirstState = true;
 let _viewerLockedClientId = null; // 뷰어가 수신을 허용하는 보고자 clientId
-let _viewerLastVesselKey = null;  // 뷰어에서 마지막으로 그린 항로 vessel key
+let _viewerLastVesselKey = null;
+let _viewerRouteLastDrawn = 0; // 마지막으로 항로를 그린 시각 (ms)
+const _VIEWER_ROUTE_THROTTLE = 60_000; // 60초에 1회만 재실행
 
 function _viewerApplyRouteIfNeeded(data) {
   if (!IS_VIEW_MODE) return;
   const key = data._vesselKey;
-  if (!key || key === _viewerLastVesselKey) return;
+  if (!key) return;
+  const now = Date.now();
+  // 같은 키이고 60초 이내면 스킵
+  if (key === _viewerLastVesselKey && now - _viewerRouteLastDrawn < _VIEWER_ROUTE_THROTTLE) return;
   _viewerLastVesselKey = key;
-  // 보고자가 선택한 선박 키로 항로·다음기항지 다시 그리기
+  _viewerRouteLastDrawn = now;
   onLiveVesselSelect(key).catch(() => {});
 }
 
