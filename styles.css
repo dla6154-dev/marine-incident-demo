@@ -1041,6 +1041,147 @@ input.required-filled {
   }
 }
 
+/* ── 데스크탑 3패널 가로 레이아웃 ── */
+@media (min-width: 1181px) {
+  :root {
+    --form-w: 480px;
+  }
+  .app-shell {
+    flex-direction: row;
+    align-items: stretch;
+  }
+  .app-shell .panel {
+    order: 1;
+    flex: 0 0 var(--form-w, 480px);
+    width: var(--form-w, 480px) !important;
+    max-height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.4);
+    transition: flex-basis 0.2s, width 0.2s;
+  }
+  .app-shell .map-area {
+    order: 2;
+    flex: 1 1 0;
+    min-width: 300px;
+  }
+  .app-shell .panel-toggle-btn {
+    display: none !important;
+  }
+  .panel-body {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .panel-body-wrap {
+    padding: 10px 0 20px;
+  }
+}
+
+/* ── 레이아웃 너비 조정 위젯 ── */
+#layout-adjuster-panel {
+  position: absolute;
+  top: 52px;
+  right: 12px;
+  background: #1a2f47;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 10px;
+  padding: 18px;
+  z-index: 1000;
+  min-width: 300px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  color: #f8fafc;
+}
+#layout-adjuster-panel h4 {
+  margin: 0 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+.adj-row {
+  margin-bottom: 14px;
+}
+.adj-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #7dd3fc;
+  margin-bottom: 6px;
+}
+.adj-slider {
+  width: 100%;
+  accent-color: #0f89aa;
+  cursor: pointer;
+}
+.adj-diagram {
+  display: flex;
+  gap: 3px;
+  height: 36px;
+  margin-bottom: 14px;
+  border-radius: 5px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.adj-diagram-form {
+  background: #0d3a5c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #7dd3fc;
+  transition: flex 0.1s;
+  min-width: 20px;
+}
+.adj-diagram-map {
+  background: #1a4a3a;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #6ee7b7;
+}
+.adj-buttons {
+  display: flex;
+  gap: 8px;
+}
+.adj-apply-btn {
+  flex: 1;
+  background: #0f89aa;
+  border: none;
+  border-radius: 6px;
+  color: white;
+  padding: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+.adj-apply-btn:hover { background: #0d7a99; }
+.adj-reset-btn {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  color: #aacad8;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.adj-reset-btn:hover { background: rgba(255,255,255,0.14); }
+#layout-adjuster-btn {
+  margin-left: auto;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  color: #f8fafc;
+  padding: 5px 11px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+#layout-adjuster-btn:hover { background: rgba(255,255,255,0.15); }
+body.view-mode #layout-adjuster-btn { display: none !important; }
+
 /* ── 긴급시설 아코디언 카드 (지도 좌상단 오버레이) ── */
 .emergency-cards-overlay {
   position: absolute;

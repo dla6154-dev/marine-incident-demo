@@ -157,6 +157,28 @@
           <span class="map-toolbar-org">한국해양교통안전공단</span>
           <span class="map-toolbar-name">여객선 해양사고 상황판</span>
         </div>
+        <button id="layout-adjuster-btn" title="레이아웃 너비 조정">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+          레이아웃
+        </button>
+        <div id="layout-adjuster-panel" class="hidden">
+          <h4>레이아웃 너비 조정</h4>
+          <div class="adj-diagram">
+            <div class="adj-diagram-form" id="adj-diagram-form">폼</div>
+            <div class="adj-diagram-map">지도 + 보고서</div>
+          </div>
+          <div class="adj-row">
+            <div class="adj-label">
+              <span>폼 너비</span>
+              <span><span id="adj-form-w-val">480</span>px</span>
+            </div>
+            <input type="range" class="adj-slider" id="adj-form-w" min="300" max="800" value="480">
+          </div>
+          <div class="adj-buttons">
+            <button class="adj-apply-btn" id="adj-apply-btn">적용 후 고정</button>
+            <button class="adj-reset-btn" id="adj-reset-btn">초기화</button>
+          </div>
+        </div>
       </div>
       <div class="map-stage">
         <div id="map" class="map"></div>
