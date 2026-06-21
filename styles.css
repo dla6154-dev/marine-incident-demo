@@ -1271,6 +1271,10 @@ body.view-mode .report-preview-actions {
   display: none !important;
 }
 
+body.view-mode #viewer-sizer-link {
+  display: flex !important;
+}
+
 /* 지도 위 오버레이들 — 뷰어에서도 정상 표시 */
 body.view-mode #emergency-cards-overlay,
 body.view-mode #map-result-overlay {

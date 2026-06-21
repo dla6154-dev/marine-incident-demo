@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>보고서 크기 조정 도구</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Pretendard", "Noto Sans KR", system-ui, sans-serif;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      background: #081420;
+      color: #f4f9fb;
+    }
+
+    /* ── 컨트롤 패널 ── */
+    .controls {
+      width: 260px;
+      flex-shrink: 0;
+      background: #0d1f2d;
+      border-right: 1px solid rgba(255,255,255,0.1);
+      padding: 20px 18px;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .ctrl-header {
+      margin-bottom: 20px;
+    }
+    .ctrl-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 5px;
+    }
+    .ctrl-desc {
+      font-size: 11px;
+      color: #7dd3fc;
+      line-height: 1.5;
+    }
+
+    .ctrl-group {
+      margin-bottom: 20px;
+    }
+    .ctrl-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: #aacad8;
+      margin-bottom: 7px;
+    }
+    .ctrl-value {
+      font-weight: 700;
+      color: #7dd3fc;
+      font-size: 13px;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: #0f89aa;
+      cursor: pointer;
+      height: 4px;
+    }
+    .ctrl-range-hint {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #3a6070;
+      margin-top: 4px;
+    }
+
+    .divider {
+      height: 1px;
+      background: rgba(255,255,255,0.08);
+      margin: 4px 0 20px;
+    }
+
+    .screen-info {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 11px;
+      color: #aacad8;
+      line-height: 1.7;
+      margin-bottom: 20px;
+    }
+    .screen-info strong { color: #f4f9fb; display: block; margin-bottom: 2px; }
+
+    .fit-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #aacad8;
+      margin-bottom: 20px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .fit-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: #ef4444;
+      transition: background 0.3s;
+    }
+    .fit-dot.ok { background: #22c55e; }
+
+    .ctrl-footer { margin-top: auto; padding-top: 16px; }
+
+    .btn-apply {
+      display: block;
+      width: 100%;
+      background: linear-gradient(135deg, #0f89aa 0%, #1487b5 100%);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      padding: 11px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-bottom: 8px;
+      transition: opacity 0.15s;
+    }
+    .btn-apply:hover { opacity: 0.88; }
+
+    .btn-reset {
+      display: block;
+      width: 100%;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      color: #aacad8;
+      padding: 9px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-reset:hover { background: rgba(255,255,255,0.11); }
+
+    .save-msg {
+      text-align: center;
+      font-size: 12px;
+      color: #1db6a4;
+      margin-top: 10px;
+      min-height: 18px;
+    }
+
+    /* ── 프리뷰 패널 ── */
+    .preview {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .preview-bar {
+      background: #112536;
+      border-bottom: 1px solid rgba(255,255,255,0.09);
+      padding: 9px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .preview-bar-title {
+      font-size: 12px;
+      color: #7dd3fc;
+      font-weight: 600;
+    }
+    .preview-bar-sub {
+      font-size: 11px;
+      color: #3a6070;
+    }
+    .btn-reload {
+      margin-left: auto;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.13);
+      border-radius: 6px;
+      color: #aacad8;
+      padding: 4px 11px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .btn-reload:hover { background: rgba(255,255,255,0.13); }
+
+    iframe {
+      flex: 1;
+      border: none;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+<div class="controls">
+  <div class="ctrl-header">
+    <div class="ctrl-title">보고서 크기 조정</div>
+    <div class="ctrl-desc">오른쪽 뷰어에서 보고서가 스크롤 없이 한 화면에 보이도록 조정하세요.</div>
+  </div>
+
+  <div class="ctrl-group">
+    <div class="ctrl-label">
+      <span>보고서 패널 너비</span>
+      <span class="ctrl-value"><span id="width-val">580</span>px</span>
+    </div>
+    <input type="range" id="width-slider" min="360" max="900" value="580" step="10">
+    <div class="ctrl-range-hint"><span>좁게 (360px)</span><span>넓게 (900px)</span></div>
+  </div>
+
+  <div class="ctrl-group">
+    <div class="ctrl-label">
+      <span>보고서 글자 크기</span>
+      <span class="ctrl-value"><span id="zoom-val">100</span>%</span>
+    </div>
+    <input type="range" id="zoom-slider" min="50" max="100" value="100" step="1">
+    <div class="ctrl-range-hint"><span>50% 축소</span><span>100% 원본</span></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="screen-info">
+    <strong>내 화면 크기</strong>
+    <span id="screen-wh">-</span>
+    <span id="screen-hint" style="color:#3a6070; font-size:10px;"></span>
+  </div>
+
+  <div class="fit-indicator">
+    <div class="fit-dot" id="fit-dot"></div>
+    <span id="fit-text">-</span>
+  </div>
+
+  <div class="ctrl-footer">
+    <button class="btn-apply" id="btn-apply">뷰어에 적용 후 저장</button>
+    <button class="btn-reset" id="btn-reset">기본값으로 초기화</button>
+    <div class="save-msg" id="save-msg"></div>
+  </div>
+</div>
+
+<div class="preview">
+  <div class="preview-bar">
+    <span class="preview-bar-title">뷰어 미리보기</span>
+    <span class="preview-bar-sub">슬라이더 → 자동 반영</span>
+    <button class="btn-reload" id="btn-reload">↺ 새로고침</button>
+  </div>
+  <iframe id="preview-iframe" src="/?view=1"></iframe>
+</div>
+
+<script>
+  const iframe = document.getElementById('preview-iframe');
+  const widthSlider = document.getElementById('width-slider');
+  const zoomSlider = document.getElementById('zoom-slider');
+  const widthVal = document.getElementById('width-val');
+  const zoomVal = document.getElementById('zoom-val');
+  const fitDot = document.getElementById('fit-dot');
+  const fitText = document.getElementById('fit-text');
+  const screenWH = document.getElementById('screen-wh');
+  const screenHint = document.getElementById('screen-hint');
+
+  // 저장된 값 불러오기
+  const savedZoom = localStorage.getItem('viewer-report-zoom');
+  const savedW = localStorage.getItem('viewer-panel-w');
+  if (savedZoom) zoomSlider.value = Math.round(parseFloat(savedZoom) * 100);
+  if (savedW) widthSlider.value = parseInt(savedW);
+
+  function updateLabels() {
+    widthVal.textContent = widthSlider.value;
+    zoomVal.textContent = zoomSlider.value;
+    updateFitHint();
+  }
+
+  function updateScreenInfo() {
+    const w = window.screen.width;
+    const h = window.screen.height;
+    screenWH.textContent = `${w} × ${h}px`;
+    const availW = w - parseInt(widthSlider.value) - 260;
+    screenHint.textContent = availW > 200 ? `(지도 영역: 약 ${availW}px)` : '';
+  }
+
+  function updateFitHint() {
+    const panelW = parseInt(widthSlider.value);
+    const zoom = parseInt(zoomSlider.value) / 100;
+    const screenH = window.screen.height;
+    // 보고서 예상 높이: 원본 약 1200px 기준
+    const estimatedH = 1200 * zoom;
+    const fits = estimatedH <= screenH - 60;
+    fitDot.classList.toggle('ok', fits);
+    fitText.textContent = fits
+      ? `한 화면에 들어갈 것 같습니다`
+      : `스크롤이 필요할 수 있습니다 (예상 ${Math.round(estimatedH)}px)`;
+  }
+
+  function sendToIframe() {
+    try {
+      iframe.contentWindow.postMessage({
+        type: 'viewer-size-preview',
+        zoom: parseInt(zoomSlider.value) / 100,
+        panelW: parseInt(widthSlider.value)
+      }, '*');
+    } catch(e) {}
+  }
+
+  widthSlider.addEventListener('input', () => { updateLabels(); sendToIframe(); updateScreenInfo(); });
+  zoomSlider.addEventListener('input', () => { updateLabels(); sendToIframe(); });
+
+  iframe.addEventListener('load', () => setTimeout(sendToIframe, 600));
+
+  document.getElementById('btn-apply').addEventListener('click', () => {
+    localStorage.setItem('viewer-report-zoom', (parseInt(zoomSlider.value) / 100).toString());
+    localStorage.setItem('viewer-panel-w', widthSlider.value);
+    const msg = document.getElementById('save-msg');
+    msg.textContent = '저장 완료 ✓ — 뷰어를 새로고침하면 적용됩니다';
+    setTimeout(() => { msg.textContent = ''; }, 4000);
+  });
+
+  document.getElementById('btn-reset').addEventListener('click', () => {
+    localStorage.removeItem('viewer-report-zoom');
+    localStorage.removeItem('viewer-panel-w');
+    zoomSlider.value = 100;
+    widthSlider.value = 580;
+    updateLabels();
+    sendToIframe();
+    updateScreenInfo();
+    const msg = document.getElementById('save-msg');
+    msg.textContent = '초기화됨';
+    setTimeout(() => { msg.textContent = ''; }, 2000);
+  });
+
+  document.getElementById('btn-reload').addEventListener('click', () => {
+    iframe.src = '/?view=1';
+  });
+
+  window.addEventListener('resize', () => { updateScreenInfo(); });
+
+  updateLabels();
+  updateScreenInfo();
+</script>
+</body>
+</html>

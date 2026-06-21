@@ -4362,12 +4362,45 @@ function _sseConnect() {
   };
 }
 
+// 뷰어 보고서 크기 적용 (report-sizer.html 연동)
+function _applyViewerReportSize(zoomStr, panelWStr) {
+  if (zoomStr) {
+    const zoom = parseFloat(zoomStr);
+    if (!isNaN(zoom)) {
+      const paper = document.querySelector(".report-paper");
+      if (paper) paper.style.zoom = zoom;
+    }
+  }
+  if (panelWStr) {
+    const w = parseInt(panelWStr);
+    if (!isNaN(w)) {
+      document.documentElement.style.setProperty("--viewer-panel-w", w + "px");
+    }
+  }
+}
+
 // 폼 필드 변경 시 브로드캐스트 등록
 document.addEventListener("DOMContentLoaded", () => {
   if (IS_VIEW_MODE) {
     // 뷰어: SSE로 수신
     _sseConnect();
     _wsSetStatus(true); // 뷰어는 항상 "연결됨" 표시
+
+    // 저장된 크기 설정 적용 (report-sizer.html에서 저장)
+    _applyViewerReportSize(
+      localStorage.getItem("viewer-report-zoom"),
+      localStorage.getItem("viewer-panel-w")
+    );
+
+    // report-sizer.html에서 실시간 미리보기 postMessage 수신
+    window.addEventListener("message", (e) => {
+      if (e.data && e.data.type === "viewer-size-preview") {
+        _applyViewerReportSize(
+          e.data.zoom !== undefined ? String(e.data.zoom) : null,
+          e.data.panelW !== undefined ? String(e.data.panelW) : null
+        );
+      }
+    });
   } else {
     // 보고자: HTTP POST로 state 전송 (Railway WS 업스트림 차단 우회)
     _wsSetStatus(true);
