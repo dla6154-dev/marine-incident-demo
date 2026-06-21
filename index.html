@@ -35,6 +35,31 @@
         <input id="inspection-agency" name="inspectionAgency" type="text" class="hidden">
         <input id="insurance-status" name="insuranceStatus" type="text" class="hidden">
 
+        <!-- 운항 현황 카드 -->
+        <div id="route-status-panel" class="info-card hidden">
+          <div class="card-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M6 20V10l6-7 6 7v10"/></svg>
+            <span>운항 현황</span>
+          </div>
+          <div class="card-body" style="padding:12px 14px">
+            <div style="font-weight:700;font-size:15px;margin-bottom:3px;color:#1e293b" id="rsp-vessel-nm">-</div>
+            <div style="color:#64748b;font-size:12px;margin-bottom:10px" id="rsp-route-nm">-</div>
+            <div style="border-top:1px solid #e2e8f0;padding-top:10px;margin-bottom:8px">
+              <div style="font-size:11px;color:#64748b">출발</div>
+              <div style="font-weight:600;color:#16a34a;font-size:13px" id="rsp-dep">-</div>
+            </div>
+            <div style="margin-bottom:10px">
+              <div style="font-size:11px;color:#64748b">다음 기항지</div>
+              <div style="font-weight:600;color:#2563eb;font-size:13px" id="rsp-next">-</div>
+            </div>
+            <div style="background:#eff6ff;border-radius:6px;padding:8px 10px;text-align:center">
+              <div style="font-size:11px;color:#64748b">다음 기항지까지</div>
+              <div style="font-size:18px;font-weight:700;color:#1d4ed8" id="rsp-dist">-</div>
+            </div>
+            <div style="font-size:10px;color:#94a3b8;margin-top:6px;text-align:right" id="rsp-updated"></div>
+          </div>
+        </div>
+
         <!-- 카드 1: 사고 상세 정보 -->
         <div class="info-card">
           <div class="card-header">
@@ -89,7 +114,7 @@
               <div id="departure-place-box" class="suggestion-box hidden"></div>
               <input type="hidden" id="departure-place" name="departurePlace">
             </label>
-            <label>출항 시각<input id="departure-time" name="departureTime" type="time"></label>
+            <label>출항 시각<input id="departure-time" name="departureTime" type="text" placeholder="예: 17:10" maxlength="5"></label>
             <label>현지 기상<input id="weather-summary" name="weatherSummary" type="text" placeholder="예: 풍향(SE), 풍속(8-9m/s), 파고(0.5-1.0m), 시정(양호)"></label>
             <label>선원 수<input id="crew-count" name="crewCount" type="number" min="0" step="1" placeholder="예: 2"></label>
             <label>여객 수<input id="passenger-count" name="passengerCount" type="number" min="0" step="1" placeholder="예: 565"></label>
@@ -151,11 +176,29 @@
 
     <main class="map-area">
       <div class="map-toolbar">
-        <span class="pill">OSM 배경 + VWorld 해안선/WMS</span>
-        <span class="pill">상황보고 서식 미리보기</span>
+        <img src="KOMSA-원형01_배경투명.png" alt="한국해양교통안전공단" class="komsa-logo-img">
+        <div class="map-toolbar-divider"></div>
+        <div class="map-toolbar-title">
+          <span class="map-toolbar-org">한국해양교통안전공단</span>
+          <span class="map-toolbar-name">여객선 해양사고 상황판</span>
+        </div>
       </div>
       <div class="map-stage">
         <div id="map" class="map"></div>
+
+        <!-- 조류 레이어 토글 버튼 -->
+        <button id="tidal-toggle-btn" title="조류 레이어 ON/OFF" style="
+          position:absolute;bottom:120px;right:10px;z-index:200;
+          background:rgba(255,255,255,0.95);border:1.5px solid #cbd5e1;
+          border-radius:8px;padding:7px 11px;cursor:pointer;
+          font-size:12px;font-weight:600;color:#374151;
+          box-shadow:0 2px 6px rgba(0,0,0,0.15);
+          display:flex;align-items:center;gap:5px;
+        ">
+          <span style="font-size:16px;">🌊</span>
+          <span id="tidal-toggle-label">조류</span>
+        </button>
+
 
         <div id="emergency-cards-overlay" class="emergency-cards-overlay hidden">
           <details class="emergency-card fire-card">
