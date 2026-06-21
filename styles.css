@@ -1218,9 +1218,12 @@ input.required-filled {
 :root { --viewer-panel-w: 580px; }
 
 body.view-mode .app-shell .panel,
-body.view-mode .panel-toggle-btn,
-body.view-mode .map-toolbar {
+body.view-mode .panel-toggle-btn {
   display: none !important;
+}
+
+body.view-mode .map-toolbar {
+  justify-content: flex-start;
 }
 
 /* 지도 영역: 오른쪽 패널 너비만큼 margin */
