@@ -4456,16 +4456,18 @@ document.addEventListener("DOMContentLoaded", () => {
 // ── 보고자용 화면 크기 조정 위젯 ──────────────────────────────────────────────
 (function initReporterLayout() {
   const R = {
-    PANEL_H: "reporter-panel-h",
-    REPORT_W: "reporter-report-w",
-    REPORT_ZOOM: "reporter-report-zoom",
+    PANEL_H:    "reporter-panel-h",
+    PANEL_ZOOM: "reporter-panel-zoom",
+    REPORT_W:   "reporter-report-w",
+    REPORT_ZOOM:"reporter-report-zoom",
   };
 
-  function applyLayout(panelH, reportW, reportZoom) {
+  function applyLayout({ panelH, panelZoom, reportW, reportZoom } = {}) {
     const root = document.documentElement;
-    if (panelH)     root.style.setProperty("--reporter-panel-h", panelH + "vh");
-    if (reportW)    root.style.setProperty("--reporter-report-w", reportW + "px");
-    if (reportZoom) {
+    if (panelH    != null) root.style.setProperty("--reporter-panel-h",    panelH + "vh");
+    if (panelZoom != null) root.style.setProperty("--reporter-panel-zoom", panelZoom / 100);
+    if (reportW   != null) root.style.setProperty("--reporter-report-w",   reportW + "px");
+    if (reportZoom != null) {
       root.style.setProperty("--reporter-report-zoom", reportZoom / 100);
       const paper = document.querySelector(".report-paper");
       if (paper) paper.style.zoom = reportZoom / 100;
@@ -4473,20 +4475,24 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 저장된 값 즉시 적용
-  const savedH    = localStorage.getItem(R.PANEL_H);
-  const savedW    = localStorage.getItem(R.REPORT_W);
-  const savedZoom = localStorage.getItem(R.REPORT_ZOOM);
-  applyLayout(savedH, savedW, savedZoom);
+  applyLayout({
+    panelH:     localStorage.getItem(R.PANEL_H),
+    panelZoom:  localStorage.getItem(R.PANEL_ZOOM),
+    reportW:    localStorage.getItem(R.REPORT_W),
+    reportZoom: localStorage.getItem(R.REPORT_ZOOM),
+  });
 
   document.addEventListener("DOMContentLoaded", () => {
-    if (IS_VIEW_MODE) return; // 뷰어에서는 표시 안 함
+    if (IS_VIEW_MODE) return;
 
     const btn   = document.getElementById("reporter-layout-btn");
     const panel = document.getElementById("reporter-layout-panel");
     const slH   = document.getElementById("rlp-panel-h");
+    const slPZ  = document.getElementById("rlp-panel-zoom");
     const slW   = document.getElementById("rlp-report-w");
     const slZ   = document.getElementById("rlp-report-zoom");
     const valH  = document.getElementById("rlp-panel-h-val");
+    const valPZ = document.getElementById("rlp-panel-zoom-val");
     const valW  = document.getElementById("rlp-report-w-val");
     const valZ  = document.getElementById("rlp-report-zoom-val");
     const saveBtn  = document.getElementById("rlp-save");
@@ -4494,34 +4500,29 @@ document.addEventListener("DOMContentLoaded", () => {
     const savedMsg = document.getElementById("rlp-saved-msg");
     if (!btn || !panel) return;
 
-    // 슬라이더 초기값 = 저장된 값 or 기본값
-    slH.value = savedH    || 40;
-    slW.value = savedW    || 840;
-    slZ.value = savedZoom || 100;
-    valH.textContent = slH.value;
-    valW.textContent = slW.value;
-    valZ.textContent = slZ.value;
+    // 슬라이더 초기값
+    slH.value  = localStorage.getItem(R.PANEL_H)    || 40;
+    slPZ.value = localStorage.getItem(R.PANEL_ZOOM)  || 100;
+    slW.value  = localStorage.getItem(R.REPORT_W)   || 840;
+    slZ.value  = localStorage.getItem(R.REPORT_ZOOM) || 100;
+    valH.textContent  = slH.value;
+    valPZ.textContent = slPZ.value;
+    valW.textContent  = slW.value;
+    valZ.textContent  = slZ.value;
 
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       panel.classList.toggle("hidden");
     });
 
-    slH.addEventListener("input", () => {
-      valH.textContent = slH.value;
-      applyLayout(slH.value, null, null);
-    });
-    slW.addEventListener("input", () => {
-      valW.textContent = slW.value;
-      applyLayout(null, slW.value, null);
-    });
-    slZ.addEventListener("input", () => {
-      valZ.textContent = slZ.value;
-      applyLayout(null, null, slZ.value);
-    });
+    slH.addEventListener("input",  () => { valH.textContent  = slH.value;  applyLayout({ panelH: slH.value }); });
+    slPZ.addEventListener("input", () => { valPZ.textContent = slPZ.value; applyLayout({ panelZoom: slPZ.value }); });
+    slW.addEventListener("input",  () => { valW.textContent  = slW.value;  applyLayout({ reportW: slW.value }); });
+    slZ.addEventListener("input",  () => { valZ.textContent  = slZ.value;  applyLayout({ reportZoom: slZ.value }); });
 
     saveBtn.addEventListener("click", () => {
       localStorage.setItem(R.PANEL_H,    slH.value);
+      localStorage.setItem(R.PANEL_ZOOM, slPZ.value);
       localStorage.setItem(R.REPORT_W,   slW.value);
       localStorage.setItem(R.REPORT_ZOOM, slZ.value);
       savedMsg.textContent = "저장됨 ✓";
@@ -4530,10 +4531,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     resetBtn.addEventListener("click", () => {
       Object.values(R).forEach(k => localStorage.removeItem(k));
-      slH.value = 40; valH.textContent = 40;
-      slW.value = 840; valW.textContent = 840;
-      slZ.value = 100; valZ.textContent = 100;
+      slH.value = 40;  valH.textContent  = 40;
+      slPZ.value = 100; valPZ.textContent = 100;
+      slW.value = 840; valW.textContent  = 840;
+      slZ.value = 100; valZ.textContent  = 100;
       document.documentElement.style.removeProperty("--reporter-panel-h");
+      document.documentElement.style.removeProperty("--reporter-panel-zoom");
       document.documentElement.style.removeProperty("--reporter-report-w");
       document.documentElement.style.removeProperty("--reporter-report-zoom");
       const paper = document.querySelector(".report-paper");
