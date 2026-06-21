@@ -746,6 +746,8 @@ map.on("click", (event) => {
 });
 
 [
+  vesselNameInput,        // 선박명 — 보고서 제목·선박제원에 직접 반영
+  vesselNumberInput,
   reportDatetimeInput,
   reportCenterInput,
   operationRouteInput,
@@ -4173,7 +4175,9 @@ function _wsApplyState(state, skipSearch = false) {
   _wsSyncing = false;
 
   if (latChanged && !skipSearch) {
-    runSearch();
+    runSearch(); // runSearch 내부에서 updateReportPreview 호출
+  } else if (IS_VIEW_MODE && latestNearestResult) {
+    updateReportPreview(); // 좌표 변화 없이 선박명·기타 필드만 변경된 경우
   }
 }
 
