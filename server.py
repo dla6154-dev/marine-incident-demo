@@ -21,6 +21,9 @@ _ws_clients: set = set()
 _ws_lock = threading.Lock()
 _ws_latest_state: dict | None = None   # 마지막 폼 상태 (신규 접속자에게 전송)
 _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+_active_client_id: str | None = None      # 현재 수락 중인 보고자 clientId
+_active_client_ts: float = 0.0            # 마지막 수신 시각 (epoch)
+_CLIENT_TIMEOUT = 120.0                   # 이 시간(초) 동안 무소식이면 재등록 허용
 
 # SSE 클라이언트 (뷰어) — Railway 프록시가 WS 업스트림을 차단하므로 SSE 사용
 _sse_clients: set = set()
@@ -691,14 +694,26 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlsplit(self.path)
         if parsed.path == "/api/state":
             try:
+                import time as _time
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length)
                 state = json.loads(body.decode("utf-8"))
-                global _ws_latest_state
-                _ws_latest_state = state
-                text = json.dumps({"type": "state", "data": state}, ensure_ascii=False)
-                _sse_broadcast(text)
-                print(f"[post] state received, sse clients={len(_sse_clients)}")
+                global _ws_latest_state, _active_client_id, _active_client_ts
+                incoming_id = state.get("_clientId")
+                now = _time.time()
+                # 처음 요청이거나 기존 클라이언트가 타임아웃된 경우 새 clientId 수락
+                if (not _active_client_id
+                        or (incoming_id and incoming_id == _active_client_id)
+                        or (now - _active_client_ts > _CLIENT_TIMEOUT)):
+                    if incoming_id:
+                        _active_client_id = incoming_id
+                    _active_client_ts = now
+                    _ws_latest_state = state
+                    text = json.dumps({"type": "state", "data": state}, ensure_ascii=False)
+                    _sse_broadcast(text)
+                    print(f"[post] state accepted  clientId={incoming_id}  sse={len(_sse_clients)}")
+                else:
+                    print(f"[post] state IGNORED (other client: {incoming_id}, active: {_active_client_id})")
                 self.send_json({"ok": True})
             except Exception as e:
                 print(f"[post] error: {e}")
