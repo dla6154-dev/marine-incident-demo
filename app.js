@@ -4172,9 +4172,12 @@ function _wsApplyState(state, skipSearch = false) {
   }
 }
 
+const _reporterClientId = Math.random().toString(36).slice(2);
+
 function _wsBroadcast() {
   if (_wsSyncing) return;
   const state = _wsCollectState();
+  state._clientId = _reporterClientId;
   fetch("/api/state", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -4192,6 +4195,7 @@ function _wsSetStatus(connected) {
 // _viewerFirstState를 _wsConnect 밖에 선언: 재연결 시 리셋되지 않도록
 // (연결이 500ms 만에 끊겨도 runSearch 예약은 유지됨)
 let _viewerFirstState = true;
+let _viewerLockedClientId = null; // 뷰어가 수신을 허용하는 보고자 clientId
 
 function _wsConnect() {
   clearTimeout(_wsReconnectTimer);
@@ -4305,20 +4309,26 @@ function _sseConnect() {
   evtSource.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
-      if (msg.type === "state" && msg.data && _viewerFirstState) {
-        _viewerFirstState = false;
-        // skipSearch=true: 내부 runSearch 억제, 아래 150ms 타이머에서 1번만 호출
-        _wsApplyState(msg.data, true);
-        const lat = parseFloat(msg.data["lat-input"]);
-        const lng = parseFloat(msg.data["lng-input"]);
-        if (!isNaN(lat) && !isNaN(lng)) {
-          setTimeout(() => {
-            if (typeof map !== "undefined") { map.updateSize(); map.renderSync(); }
-            runSearch();
-          }, 150);
+      if (msg.type === "state" && msg.data) {
+        const incomingId = msg.data._clientId;
+        // 처음 수신한 clientId에 락 (이후 다른 clientId는 무시)
+        if (!_viewerLockedClientId && incomingId) _viewerLockedClientId = incomingId;
+        if (_viewerLockedClientId && incomingId && incomingId !== _viewerLockedClientId) return;
+
+        if (_viewerFirstState) {
+          _viewerFirstState = false;
+          _wsApplyState(msg.data, true);
+          const lat = parseFloat(msg.data["lat-input"]);
+          const lng = parseFloat(msg.data["lng-input"]);
+          if (!isNaN(lat) && !isNaN(lng)) {
+            setTimeout(() => {
+              if (typeof map !== "undefined") { map.updateSize(); map.renderSync(); }
+              runSearch();
+            }, 150);
+          }
+        } else {
+          _wsApplyState(msg.data);
         }
-      } else if (msg.type === "state" && msg.data) {
-        _wsApplyState(msg.data);
       }
     } catch (_) {}
   };
