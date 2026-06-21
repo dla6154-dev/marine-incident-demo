@@ -4149,6 +4149,11 @@ function _wsApplyState(state, skipSearch = false) {
   let latChanged = false;
   const prevLat = document.getElementById("lat-input")?.value;
   const prevLng = document.getElementById("lng-input")?.value;
+  const incomingLat = state["lat-input"];
+  const incomingLng = state["lng-input"];
+  if (IS_VIEW_MODE && (incomingLat !== prevLat || incomingLng !== prevLng)) {
+    console.log(`[뷰어 좌표변경] ${new Date().toLocaleTimeString()} | 이전: (${prevLat}, ${prevLng}) → 수신: (${incomingLat}, ${incomingLng}) | clientId: ${state._clientId || "없음"}`);
+  }
 
   for (const [id, value] of Object.entries(state)) {
     const el = document.getElementById(id);
