@@ -4362,59 +4362,6 @@ function _sseConnect() {
   };
 }
 
-// ── 레이아웃 너비 조정 위젯 ──
-(function initLayoutAdjuster() {
-  const savedW = localStorage.getItem("layout-form-w");
-  if (savedW) document.documentElement.style.setProperty("--form-w", savedW + "px");
-
-  document.addEventListener("DOMContentLoaded", () => {
-    const btn = document.getElementById("layout-adjuster-btn");
-    const panel = document.getElementById("layout-adjuster-panel");
-    const slider = document.getElementById("adj-form-w");
-    const valSpan = document.getElementById("adj-form-w-val");
-    const diagram = document.getElementById("adj-diagram-form");
-    const applyBtn = document.getElementById("adj-apply-btn");
-    const resetBtn = document.getElementById("adj-reset-btn");
-    if (!btn || !panel || !slider) return;
-
-    const currentW = savedW ? parseInt(savedW) : 480;
-    slider.value = currentW;
-    valSpan.textContent = currentW;
-    diagram.style.flex = `0 0 ${currentW}px`;
-
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      panel.classList.toggle("hidden");
-    });
-
-    slider.addEventListener("input", () => {
-      const w = parseInt(slider.value);
-      valSpan.textContent = w;
-      document.documentElement.style.setProperty("--form-w", w + "px");
-      diagram.style.flex = `0 0 ${Math.round((w / 800) * 120)}px`;
-    });
-
-    applyBtn.addEventListener("click", () => {
-      localStorage.setItem("layout-form-w", slider.value);
-      panel.classList.add("hidden");
-    });
-
-    resetBtn.addEventListener("click", () => {
-      localStorage.removeItem("layout-form-w");
-      document.documentElement.style.setProperty("--form-w", "480px");
-      slider.value = 480;
-      valSpan.textContent = 480;
-      diagram.style.flex = `0 0 72px`;
-    });
-
-    document.addEventListener("click", (e) => {
-      if (!panel.contains(e.target) && e.target !== btn) {
-        panel.classList.add("hidden");
-      }
-    });
-  });
-})();
-
 // 폼 필드 변경 시 브로드캐스트 등록
 document.addEventListener("DOMContentLoaded", () => {
   if (IS_VIEW_MODE) {
