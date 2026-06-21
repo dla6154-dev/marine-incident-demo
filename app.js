@@ -4183,6 +4183,7 @@ function _wsBroadcast() {
   if (_wsSyncing) return;
   const state = _wsCollectState();
   state._clientId = _reporterClientId;
+  if (_activeVesselKey) state._vesselKey = _activeVesselKey;
   fetch("/api/state", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -4201,6 +4202,16 @@ function _wsSetStatus(connected) {
 // (연결이 500ms 만에 끊겨도 runSearch 예약은 유지됨)
 let _viewerFirstState = true;
 let _viewerLockedClientId = null; // 뷰어가 수신을 허용하는 보고자 clientId
+let _viewerLastVesselKey = null;  // 뷰어에서 마지막으로 그린 항로 vessel key
+
+function _viewerApplyRouteIfNeeded(data) {
+  if (!IS_VIEW_MODE) return;
+  const key = data._vesselKey;
+  if (!key || key === _viewerLastVesselKey) return;
+  _viewerLastVesselKey = key;
+  // 보고자가 선택한 선박 키로 항로·다음기항지 다시 그리기
+  onLiveVesselSelect(key).catch(() => {});
+}
 
 function _wsConnect() {
   clearTimeout(_wsReconnectTimer);
@@ -4329,10 +4340,12 @@ function _sseConnect() {
             setTimeout(() => {
               if (typeof map !== "undefined") { map.updateSize(); map.renderSync(); }
               runSearch();
+              _viewerApplyRouteIfNeeded(msg.data);
             }, 150);
           }
         } else {
           _wsApplyState(msg.data);
+          _viewerApplyRouteIfNeeded(msg.data);
         }
       }
     } catch (_) {}
