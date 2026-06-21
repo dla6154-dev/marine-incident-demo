@@ -4366,6 +4366,103 @@ function _sseConnect() {
   };
 }
 
+// ── 보고자용 화면 크기 조정 위젯 ──────────────────────────────────────────────
+(function initReporterLayout() {
+  const R = {
+    PANEL_H: "reporter-panel-h",
+    REPORT_W: "reporter-report-w",
+    REPORT_ZOOM: "reporter-report-zoom",
+  };
+
+  function applyLayout(panelH, reportW, reportZoom) {
+    const root = document.documentElement;
+    if (panelH)     root.style.setProperty("--reporter-panel-h", panelH + "vh");
+    if (reportW)    root.style.setProperty("--reporter-report-w", reportW + "px");
+    if (reportZoom) {
+      root.style.setProperty("--reporter-report-zoom", reportZoom / 100);
+      const paper = document.querySelector(".report-paper");
+      if (paper) paper.style.zoom = reportZoom / 100;
+    }
+  }
+
+  // 저장된 값 즉시 적용
+  const savedH    = localStorage.getItem(R.PANEL_H);
+  const savedW    = localStorage.getItem(R.REPORT_W);
+  const savedZoom = localStorage.getItem(R.REPORT_ZOOM);
+  applyLayout(savedH, savedW, savedZoom);
+
+  document.addEventListener("DOMContentLoaded", () => {
+    if (IS_VIEW_MODE) return; // 뷰어에서는 표시 안 함
+
+    const btn   = document.getElementById("reporter-layout-btn");
+    const panel = document.getElementById("reporter-layout-panel");
+    const slH   = document.getElementById("rlp-panel-h");
+    const slW   = document.getElementById("rlp-report-w");
+    const slZ   = document.getElementById("rlp-report-zoom");
+    const valH  = document.getElementById("rlp-panel-h-val");
+    const valW  = document.getElementById("rlp-report-w-val");
+    const valZ  = document.getElementById("rlp-report-zoom-val");
+    const saveBtn  = document.getElementById("rlp-save");
+    const resetBtn = document.getElementById("rlp-reset");
+    const savedMsg = document.getElementById("rlp-saved-msg");
+    if (!btn || !panel) return;
+
+    // 슬라이더 초기값 = 저장된 값 or 기본값
+    slH.value = savedH    || 40;
+    slW.value = savedW    || 840;
+    slZ.value = savedZoom || 100;
+    valH.textContent = slH.value;
+    valW.textContent = slW.value;
+    valZ.textContent = slZ.value;
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      panel.classList.toggle("hidden");
+    });
+
+    slH.addEventListener("input", () => {
+      valH.textContent = slH.value;
+      applyLayout(slH.value, null, null);
+    });
+    slW.addEventListener("input", () => {
+      valW.textContent = slW.value;
+      applyLayout(null, slW.value, null);
+    });
+    slZ.addEventListener("input", () => {
+      valZ.textContent = slZ.value;
+      applyLayout(null, null, slZ.value);
+    });
+
+    saveBtn.addEventListener("click", () => {
+      localStorage.setItem(R.PANEL_H,    slH.value);
+      localStorage.setItem(R.REPORT_W,   slW.value);
+      localStorage.setItem(R.REPORT_ZOOM, slZ.value);
+      savedMsg.textContent = "저장됨 ✓";
+      setTimeout(() => { savedMsg.textContent = ""; }, 2500);
+    });
+
+    resetBtn.addEventListener("click", () => {
+      Object.values(R).forEach(k => localStorage.removeItem(k));
+      slH.value = 40; valH.textContent = 40;
+      slW.value = 840; valW.textContent = 840;
+      slZ.value = 100; valZ.textContent = 100;
+      document.documentElement.style.removeProperty("--reporter-panel-h");
+      document.documentElement.style.removeProperty("--reporter-report-w");
+      document.documentElement.style.removeProperty("--reporter-report-zoom");
+      const paper = document.querySelector(".report-paper");
+      if (paper) paper.style.zoom = "";
+      savedMsg.textContent = "초기화됨";
+      setTimeout(() => { savedMsg.textContent = ""; }, 2000);
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!panel.contains(e.target) && e.target !== btn) {
+        panel.classList.add("hidden");
+      }
+    });
+  });
+})();
+
 // 뷰어 보고서 크기 적용 (report-sizer.html 연동)
 function _applyViewerReportSize(zoomStr, panelWStr) {
   if (zoomStr) {
