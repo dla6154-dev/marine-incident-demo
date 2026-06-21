@@ -4334,7 +4334,7 @@ function _sseConnect() {
         const incomingId = msg.data._clientId;
         // 처음 수신한 clientId에 락 (이후 다른 clientId는 무시)
         if (!_viewerLockedClientId && incomingId) _viewerLockedClientId = incomingId;
-        if (_viewerLockedClientId && incomingId && incomingId !== _viewerLockedClientId) return;
+        if (_viewerLockedClientId && (!incomingId || incomingId !== _viewerLockedClientId)) return;
 
         if (_viewerFirstState) {
           _viewerFirstState = false;
