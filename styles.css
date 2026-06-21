@@ -88,11 +88,33 @@ body {
   border-top: 1px solid rgba(255,255,255,0.1);
   border-bottom: 1px solid rgba(255,255,255,0.1);
   color: #aacad8;
-  cursor: pointer;
+  cursor: ns-resize;
   padding: 0;
+  user-select: none;
+  position: relative;
 }
 
 .panel-toggle-btn:hover { color: #f4f9fb; background: #112536; }
+
+/* 드래그 중 전체 페이지 텍스트 선택 방지 */
+body.panel-resizing { user-select: none; cursor: ns-resize !important; }
+body.panel-resizing * { cursor: ns-resize !important; }
+
+/* 드래그 핸들 시각적 힌트 (가운데 점선) */
+.panel-toggle-btn::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 3px;
+  border-top: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  opacity: 0.4;
+  pointer-events: none;
+}
+.panel-toggle-btn:hover::before { opacity: 0.8; }
 
 .toggle-chevron {
   width: 16px;

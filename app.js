@@ -4366,6 +4366,93 @@ function _sseConnect() {
   };
 }
 
+// ── 패널 드래그 리사이즈 ────────────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", () => {
+  const toggleBtn = document.getElementById("panel-toggle");
+  const panel     = document.querySelector(".app-shell .panel");
+  if (!toggleBtn || !panel || IS_VIEW_MODE) return;
+
+  let dragStartY   = null;
+  let dragStartVh  = null;
+  let dragged      = false;
+
+  function getPanelVh() {
+    const saved = localStorage.getItem("reporter-panel-h");
+    return saved ? parseFloat(saved) : 40;
+  }
+
+  function setPanelVh(vh) {
+    const clamped = Math.min(80, Math.max(10, vh));
+    document.documentElement.style.setProperty("--reporter-panel-h", clamped + "vh");
+    // 팝업 슬라이더도 동기화
+    const sl  = document.getElementById("rlp-panel-h");
+    const val = document.getElementById("rlp-panel-h-val");
+    if (sl)  sl.value = Math.round(clamped);
+    if (val) val.textContent = Math.round(clamped);
+    return clamped;
+  }
+
+  toggleBtn.addEventListener("mousedown", (e) => {
+    dragStartY  = e.clientY;
+    dragStartVh = getPanelVh();
+    dragged     = false;
+    e.preventDefault();
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (dragStartY === null) return;
+    const deltaY  = dragStartY - e.clientY;          // 위로 드래그 → 패널 커짐
+    const deltaVh = (deltaY / window.innerHeight) * 100;
+    if (Math.abs(deltaVh) > 0.5) dragged = true;
+    if (dragged) {
+      document.body.classList.add("panel-resizing");
+      setPanelVh(dragStartVh + deltaVh);
+    }
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (dragStartY === null) return;
+    if (dragged) {
+      // 현재 적용된 값을 저장
+      const current = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue("--reporter-panel-h")
+      ) || getPanelVh();
+      localStorage.setItem("reporter-panel-h", Math.round(current));
+    }
+    dragStartY  = null;
+    dragStartVh = null;
+    dragged     = false;
+    document.body.classList.remove("panel-resizing");
+  });
+
+  // 터치 지원
+  toggleBtn.addEventListener("touchstart", (e) => {
+    dragStartY  = e.touches[0].clientY;
+    dragStartVh = getPanelVh();
+    dragged     = false;
+  }, { passive: true });
+
+  document.addEventListener("touchmove", (e) => {
+    if (dragStartY === null) return;
+    const deltaY  = dragStartY - e.touches[0].clientY;
+    const deltaVh = (deltaY / window.innerHeight) * 100;
+    if (Math.abs(deltaVh) > 0.5) dragged = true;
+    if (dragged) setPanelVh(dragStartVh + deltaVh);
+  }, { passive: true });
+
+  document.addEventListener("touchend", () => {
+    if (dragged && dragStartY !== null) {
+      const current = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue("--reporter-panel-h")
+      ) || getPanelVh();
+      localStorage.setItem("reporter-panel-h", Math.round(current));
+    }
+    dragStartY  = null;
+    dragStartVh = null;
+    dragged     = false;
+  });
+});
+
 // ── 보고자용 화면 크기 조정 위젯 ──────────────────────────────────────────────
 (function initReporterLayout() {
   const R = {
