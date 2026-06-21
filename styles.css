@@ -139,7 +139,7 @@ body.panel-resizing * { cursor: ns-resize !important; }
 
 .panel-body {
   display: grid;
-  grid-template-columns: 7fr 7fr 7fr 9fr;
+  grid-template-columns: 15fr 25fr 25fr 35fr;
   gap: 10px;
   align-items: stretch;
 }
@@ -188,6 +188,24 @@ body.panel-resizing * { cursor: ns-resize !important; }
 
 .card-body-grid .span-2 {
   grid-column: 1 / -1;
+}
+
+/* 운항 정보 카드: 6열 그리드 (2분할·3분할 동시 지원) */
+.card-body.card-body-voyage {
+  display: grid !important;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  flex-direction: unset;
+}
+.card-body-voyage .span-6 { grid-column: 1 / -1; }
+.card-body-voyage .span-3 { grid-column: span 3; }
+.card-body-voyage .span-2 { grid-column: span 2; }
+
+/* 피해/사고 카드 사고종류+추정원인 2열 */
+.damage-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
 }
 
 .card-body-note {
