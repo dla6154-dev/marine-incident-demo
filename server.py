@@ -806,7 +806,7 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
                     wfs_features = fetch_islands_wfs(
                         lat, lng, radius_nm,
                         vworld_key=VWORLD_API_KEY,
-                        vworld_domain=VWORLD_DOMAIN,
+                        vworld_domain=os.getenv("RAILWAY_PUBLIC_DOMAIN") or VWORLD_DOMAIN,
                         island_type_filter=island_type,
                     )
                     print(f"[wfs] radius={radius_nm}nm features={len(wfs_features)}")
