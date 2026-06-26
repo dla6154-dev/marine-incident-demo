@@ -163,7 +163,7 @@ PORT = int(os.getenv("PORT", "8000"))
 ROOT_DIR = pathlib.Path(__file__).resolve().parent
 IS_RAILWAY = bool(os.getenv("RAILWAY_PUBLIC_DOMAIN") or os.getenv("RAILWAY_ENVIRONMENT"))
 VWORLD_API_KEY = os.getenv(
-    "VWORLD_API_KEY", "9ACC81DD-8F5F-335A-B8C0-04190CEEF1C1"
+    "VWORLD_API_KEY", "DFA6EFA7-5703-3AC4-9E68-0176670BD26A"
 )
 VWORLD_DOMAIN = os.getenv("VWORLD_DOMAIN", "localhost")
 VWORLD_DATA_URL = "https://api.vworld.kr/req/data"
