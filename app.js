@@ -3630,11 +3630,23 @@ async function updateRouteStatusPanel(v, sailingRecords) {
     departurePlaceFilterInput.placeholder = `출항지 검색... (${orderedStops.length}개)`;
   }
 
-  // 3. 현재 위치 (마지막 출항 기항지) → 다음 기항지 추정
-  // nvg_drc_cd: 1=정방향(순서대로), 2=역방향(거꾸로)
-  const isReverse = String(v.nvg_drc_cd) === "2";
+  // 3. 다음 기항지 추정
+  // 1차: sailingRecords 시계열에서 lastDep 이후 첫 입항중(5)/기항지도착(6)/완료(3) 레코드
+  // → oprt-line-info-v2 API가 해당 항로 데이터를 제공하지 않는 경우에도 동작
   let nextStop = null;
-  if (lastDep && orderedStops.length > 0) {
+  if (lastDep) {
+    const afterDep = sailingRecords
+      .filter(r => r.portcl_nm && r.portcl_cd &&
+        ["3", "5", "6"].includes(String(r.nvg_stts_cd)) &&
+        (r.nvg_stts_chg_dt || "") > (lastDep.nvg_stts_chg_dt || ""))
+      .sort((a, b) => (a.nvg_stts_chg_dt || "") < (b.nvg_stts_chg_dt || "") ? -1 : 1);
+    if (afterDep.length > 0) {
+      nextStop = { portcl_cd: afterDep[0].portcl_cd, portcl_nm: afterDep[0].portcl_nm };
+    }
+  }
+  // 2차 fallback: orderedStops 순서 기반 (API가 데이터를 제공하는 경우)
+  if (!nextStop && lastDep && orderedStops.length > 0) {
+    const isReverse = String(v.nvg_drc_cd) === "2";
     const curIdx = orderedStops.findIndex(
       s => s.portcl_cd === lastDep.portcl_cd || s.portcl_nm === lastDep.portcl_nm
     );
