@@ -133,6 +133,12 @@ body.panel-resizing * { cursor: ns-resize !important; }
 .accent-field input {
   border-color: rgba(231, 76, 60, 0.6) !important;
   background: rgba(231, 76, 60, 0.07) !important;
+  color: #fff4f2 !important;
+  caret-color: #fff4f2;
+}
+
+.accent-field input::placeholder {
+  color: rgba(255, 244, 242, 0.72) !important;
 }
 
 .accent-field {
