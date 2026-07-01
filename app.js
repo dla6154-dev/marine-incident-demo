@@ -1,5 +1,14 @@
 let _liveVesselItems = []; // [{label, key}] — 선언을 최상단에 둬야 bootstrapVesselData 이전에 참조 가능
 
+window.switchPanelTab = function(name) {
+  document.querySelectorAll(".panel-tab").forEach(btn => {
+    btn.classList.toggle("active", btn.id === `panel-tab-btn-${name}`);
+  });
+  document.querySelectorAll(".panel-tab-content").forEach(el => {
+    el.classList.toggle("active", el.id === `panel-tab-${name}`);
+  });
+};
+
 const DEFAULT_CENTER = [126.9784, 37.5665];
 const SAMPLE_COORDINATES = { lat: 34.099686, lng: 125.116658 };
 const SEARCH_RESULT_ZOOM = 11;
@@ -328,7 +337,7 @@ const previewNearestHospitalDist     = document.getElementById("preview-nearest-
 const copyReportButton = document.getElementById("copy-report-button");
 const copySmsButton = document.getElementById("copy-sms-button");
 const sampleReportButton = document.getElementById("sample-report-button");
-const toggleReportButton = document.getElementById("toggle-report-button");
+const toggleReportButton = document.getElementById("toggle-report-button"); // null in new tab layout
 
 const VESSEL_INPUTS = {
   vesselName: vesselNameInput,
@@ -363,6 +372,8 @@ let latestNearestKcgBranch = null;    // 출장소
 let cachedKcgStations = [];
 let filteredKcgStations = [];
 let kcgStationFetchPromise = null;
+let cachedKcgAffiliations = null;
+let kcgAffiliationFetchPromise = null;
 
 // 해양기상 관측지점
 let cachedWeatherStations = null;
@@ -777,13 +788,15 @@ map.on("click", (event) => {
   element.addEventListener("change", updateReportPreview);
 });
 
-toggleReportButton.addEventListener("click", () => {
-  const isCollapsed = reportPreviewOverlay.classList.toggle("collapsed");
-  const label = toggleReportButton.querySelector(".toggle-report-label");
-  toggleReportButton.setAttribute("aria-expanded", String(!isCollapsed));
-  label.textContent = isCollapsed ? "보고서 펼치기" : "보고서 접기";
-  toggleReportButton.title = isCollapsed ? "보고서 펼치기" : "보고서 접기";
-});
+if (toggleReportButton) {
+  toggleReportButton.addEventListener("click", () => {
+    const isCollapsed = reportPreviewOverlay.classList.toggle("collapsed");
+    const label = toggleReportButton.querySelector(".toggle-report-label");
+    toggleReportButton.setAttribute("aria-expanded", String(!isCollapsed));
+    label.textContent = isCollapsed ? "보고서 펼치기" : "보고서 접기";
+    toggleReportButton.title = isCollapsed ? "보고서 펼치기" : "보고서 접기";
+  });
+}
 
 let _toastTimer = null;
 function showToast(msg) {
@@ -1572,10 +1585,110 @@ function renderNearestWeatherStationResult() {
 }
 
 async function fetchKcgStations() {
-  const response = await fetch(KCG_STATION_API_URL, { cache: "no-store" });
+  const [response, affiliations] = await Promise.all([
+    fetch(KCG_STATION_API_URL, { cache: "no-store" }),
+    ensureKcgAffiliationsLoaded(),
+  ]);
   if (!response.ok) throw new Error(`해경파출소 API 오류: ${response.status}`);
   const data = await response.json();
-  return data.stations || [];
+  return enrichKcgStationsWithAffiliations(data.stations || [], affiliations);
+}
+
+async function ensureKcgAffiliationsLoaded() {
+  if (Array.isArray(cachedKcgAffiliations)) return cachedKcgAffiliations;
+  if (!kcgAffiliationFetchPromise) {
+    kcgAffiliationFetchPromise = fetch("/data/kcg_station_affiliations.json", { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`해경 소속 보조데이터 오류: ${response.status}`);
+        return response.json();
+      })
+      .then((rows) => {
+        cachedKcgAffiliations = Array.isArray(rows) ? rows : [];
+        return cachedKcgAffiliations;
+      })
+      .catch((error) => {
+        console.warn("해경 소속 보조데이터 로드 실패:", error);
+        kcgAffiliationFetchPromise = null;
+        cachedKcgAffiliations = [];
+        return cachedKcgAffiliations;
+      });
+  }
+  return kcgAffiliationFetchPromise;
+}
+
+function enrichKcgStationsWithAffiliations(stations, affiliations) {
+  if (!Array.isArray(stations) || !stations.length || !Array.isArray(affiliations) || !affiliations.length) {
+    return Array.isArray(stations) ? stations : [];
+  }
+
+  const byName = new Map();
+  affiliations.forEach((item) => {
+    const name = String(item?.name || "").trim();
+    if (!name) return;
+    const list = byName.get(name);
+    if (list) list.push(item);
+    else byName.set(name, [item]);
+  });
+
+  return stations.map((station) => {
+    if (getKcgAffiliationText(station)) return station;
+
+    const stationName = String(station?.name || "").trim();
+    const candidates = byName.get(stationName);
+    if (!candidates?.length) return station;
+
+    const lat = Number(station?.lat || 0);
+    const lng = Number(station?.lng || 0);
+    const match = candidates.reduce((best, current) => {
+      if (!best) return current;
+      const bestDelta = Math.abs(Number(best?.lat || 0) - lat) + Math.abs(Number(best?.lng || 0) - lng);
+      const currentDelta = Math.abs(Number(current?.lat || 0) - lat) + Math.abs(Number(current?.lng || 0) - lng);
+      return currentDelta < bestDelta ? current : best;
+    }, null);
+
+    if (!match) return station;
+
+    const delta = Math.abs(Number(match?.lat || 0) - lat) + Math.abs(Number(match?.lng || 0) - lng);
+    if (delta > 0.03) return station;
+
+    return {
+      ...station,
+      regional_hq_code: match.regional_hq_code || station.regional_hq_code || "",
+      regional_hq_name: match.regional_hq_name || station.regional_hq_name || "",
+      police_station_code: match.police_station_code || station.police_station_code || "",
+      police_station_name: match.police_station_name || station.police_station_name || "",
+    };
+  });
+}
+
+function getKcgAffiliationText(station) {
+  if (!station) return "";
+  const policeStationName = String(station.police_station_name || "").trim();
+  const regionalHqName = String(station.regional_hq_name || "").trim();
+  if (policeStationName && regionalHqName) return `${policeStationName} / ${regionalHqName}`;
+  if (policeStationName) return policeStationName;
+  if (regionalHqName) return regionalHqName;
+  return "";
+}
+
+function renderKcgAffiliationBody(element, station) {
+  if (!element) return;
+  const mainText = getKcgAffiliationText(station);
+  element.replaceChildren();
+  if (!mainText) {
+    element.textContent = "소속 정보 미제공";
+    return;
+  }
+
+  const main = document.createElement("span");
+  main.className = "kcg-affiliation-main";
+  main.textContent = mainText;
+
+  const sub = document.createElement("span");
+  sub.className = "kcg-affiliation-sub";
+  sub.textContent = "소속 해양경찰서 / 지방청";
+
+  element.append(main, sub);
 }
 
 function findNearestKcgStation(lat, lng, stations) {
@@ -1627,11 +1740,14 @@ function renderNearestKcgStationResult() {
   const bodyEl = document.getElementById("preview-nearest-kcg-station");
   if (nameEl) nameEl.textContent = latestNearestKcgStation?.name || "-";
   if (distEl) distEl.textContent = latestNearestKcgStation ? formatDistanceNm(latestNearestKcgStation.distance_nm) : "-";
+  renderKcgAffiliationBody(bodyEl, latestNearestKcgStation);
 
   const branchNameEl = document.getElementById("preview-nearest-kcg-branch-name");
   const branchDistEl = document.getElementById("preview-nearest-kcg-branch-dist");
+  const branchBodyEl = document.getElementById("preview-nearest-kcg-branch");
   if (branchNameEl) branchNameEl.textContent = latestNearestKcgBranch?.name || "-";
   if (branchDistEl) branchDistEl.textContent = latestNearestKcgBranch ? formatDistanceNm(latestNearestKcgBranch.distance_nm) : "-";
+  renderKcgAffiliationBody(branchBodyEl, latestNearestKcgBranch);
 }
 
 function getDisplayDistance(result) {
@@ -1776,6 +1892,8 @@ function updateReportPreview() {
 
   reportPreviewOverlay.classList.remove("hidden");
   if (emergencyCardsOverlay) emergencyCardsOverlay.classList.remove("hidden");
+  // 계산 완료 시 보고서 탭으로 자동 전환
+  switchPanelTab("report");
 
   const islandDistEl = document.getElementById("island-dist-value");
   const islandDistCard = document.getElementById("island-dist-card");
@@ -1893,7 +2011,7 @@ function updateReportPreview() {
   if (latestNearestKcgStation) {
     if (previewNearestKcgStationName) previewNearestKcgStationName.textContent = latestNearestKcgStation.name || "-";
     if (previewNearestKcgStationDist) previewNearestKcgStationDist.textContent = formatDistanceNm(latestNearestKcgStation.distance_nm);
-    if (previewNearestKcgStation) previewNearestKcgStation.textContent = "연락처 미제공";
+    renderKcgAffiliationBody(previewNearestKcgStation, latestNearestKcgStation);
   } else {
     if (previewNearestKcgStationName) previewNearestKcgStationName.textContent = "없음";
     if (previewNearestKcgStationDist) previewNearestKcgStationDist.textContent = "-";
@@ -1906,7 +2024,7 @@ function updateReportPreview() {
   if (latestNearestKcgBranch) {
     if (previewNearestKcgBranchName) previewNearestKcgBranchName.textContent = latestNearestKcgBranch.name || "-";
     if (previewNearestKcgBranchDist) previewNearestKcgBranchDist.textContent = formatDistanceNm(latestNearestKcgBranch.distance_nm);
-    if (previewNearestKcgBranch) previewNearestKcgBranch.textContent = "연락처 미제공";
+    renderKcgAffiliationBody(previewNearestKcgBranch, latestNearestKcgBranch);
   } else {
     if (previewNearestKcgBranchName) previewNearestKcgBranchName.textContent = "없음";
     if (previewNearestKcgBranchDist) previewNearestKcgBranchDist.textContent = "-";

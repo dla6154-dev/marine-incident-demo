@@ -176,6 +176,7 @@ FIRE_STATION_CACHE: list[dict] | None = None
 HEALTH_CENTER_CACHE: list[dict] | None = None
 HOSPITAL_CACHE: list[dict] | None = None
 KCG_STATION_CACHE: list[dict] | None = None
+KCG_AFFILIATION_CACHE: list[dict] | None = None
 
 # WFS 결과 캐시 (메모리 + 디스크 병행)
 import time as _time
@@ -198,6 +199,11 @@ def _wfs_disk_path(key: str) -> pathlib.Path:
 
 def get_cached_wfs(lat: float, lng: float, island_type: str):
     key = _wfs_cache_key(lat, lng, island_type)
+    if island_type == "inhabited":
+        features = _get_island_polygon_bundle()
+        if features:
+            WFS_CACHE[key] = features
+            return features
     if key in WFS_CACHE:
         return WFS_CACHE[key]
     path = _wfs_disk_path(key)
@@ -223,6 +229,53 @@ def set_cached_wfs(lat: float, lng: float, island_type: str, features: list) -> 
 
 def _load_bundle(filename: str) -> list[dict]:
     return json.loads((ROOT_DIR / "data" / filename).read_text(encoding="utf-8"))
+
+
+def get_kcg_affiliations() -> list[dict]:
+    global KCG_AFFILIATION_CACHE
+    if KCG_AFFILIATION_CACHE is None:
+        path = ROOT_DIR / "data" / "kcg_station_affiliations.json"
+        if path.exists():
+            KCG_AFFILIATION_CACHE = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            KCG_AFFILIATION_CACHE = []
+    return KCG_AFFILIATION_CACHE
+
+
+def _merge_kcg_affiliations(stations: list[dict]) -> list[dict]:
+    affiliations = get_kcg_affiliations()
+    if not affiliations:
+        return stations
+
+    by_name: dict[str, list[dict]] = {}
+    for affiliation in affiliations:
+        name = str(affiliation.get("name", "")).strip()
+        if name:
+            by_name.setdefault(name, []).append(affiliation)
+
+    merged: list[dict] = []
+    for station in stations:
+        station_copy = dict(station)
+        candidates = by_name.get(str(station_copy.get("name", "")).strip(), [])
+        if candidates:
+            lat = float(station_copy.get("lat") or 0.0)
+            lng = float(station_copy.get("lng") or 0.0)
+            match = min(
+                candidates,
+                key=lambda item: abs(float(item.get("lat") or 0.0) - lat) + abs(float(item.get("lng") or 0.0) - lng),
+            )
+            delta = abs(float(match.get("lat") or 0.0) - lat) + abs(float(match.get("lng") or 0.0) - lng)
+            if delta <= 0.03:
+                station_copy.update(
+                    {
+                        "regional_hq_code": match.get("regional_hq_code", ""),
+                        "regional_hq_name": match.get("regional_hq_name", ""),
+                        "police_station_code": match.get("police_station_code", ""),
+                        "police_station_name": match.get("police_station_name", ""),
+                    }
+                )
+        merged.append(station_copy)
+    return merged
 
 
 def get_fire_stations() -> list[dict]:
@@ -259,7 +312,7 @@ def get_kcg_stations() -> list[dict]:
     global KCG_STATION_CACHE
     if KCG_STATION_CACHE is None:
         if IS_RAILWAY:
-            KCG_STATION_CACHE = _load_bundle("kcg_stations.json")
+            KCG_STATION_CACHE = _merge_kcg_affiliations(_load_bundle("kcg_stations.json"))
         else:
             stations = fetch_kcg_stations()
             if not any("출장소" in s.get("name", "") for s in stations):
@@ -273,7 +326,7 @@ def get_kcg_stations() -> list[dict]:
                     print(f"[kcg-stations] 출장소 {len(branches)}개 병합 완료, 총 {len(stations)}개")
                 except Exception as exc:
                     print(f"[kcg-stations] 출장소 병합 실패: {exc}")
-            KCG_STATION_CACHE = stations
+            KCG_STATION_CACHE = _merge_kcg_affiliations(stations)
     return KCG_STATION_CACHE
 
 
@@ -444,6 +497,7 @@ def _fetch_open_meteo(lat: float, lng: float) -> dict | None:
 
 
 _ISLANDS_CACHE: list[dict] | None = None
+_ISLAND_POLYGON_BUNDLE_CACHE: list[dict] | None = None
 
 def _get_islands_from_bundle() -> list[dict]:
     global _ISLANDS_CACHE
@@ -451,6 +505,51 @@ def _get_islands_from_bundle() -> list[dict]:
         path = ROOT_DIR / "data" / "islands.json"
         _ISLANDS_CACHE = json.loads(path.read_text(encoding="utf-8"))
     return _ISLANDS_CACHE
+
+
+def _get_island_polygon_bundle() -> list[dict]:
+    global _ISLAND_POLYGON_BUNDLE_CACHE
+    if _ISLAND_POLYGON_BUNDLE_CACHE is not None:
+        return _ISLAND_POLYGON_BUNDLE_CACHE
+
+    candidate_paths = [
+        ROOT_DIR / "data" / "island_polygons_inhabited.min.json",
+        ROOT_DIR / "data" / "island_polygons.json",
+    ]
+    for path in candidate_paths:
+        if not path.exists():
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        features = payload.get("features") if isinstance(payload, dict) else None
+        if isinstance(features, list) and features:
+            _ISLAND_POLYGON_BUNDLE_CACHE = features
+            return _ISLAND_POLYGON_BUNDLE_CACHE
+
+    _ISLAND_POLYGON_BUNDLE_CACHE = []
+    return _ISLAND_POLYGON_BUNDLE_CACHE
+
+
+def _find_nearest_island_from_polygon_bundle(lat: float, lng: float, island_type_filter: str) -> dict | None:
+    """로컬에 저장된 유인도 폴리곤 번들에서 최근접 섬/해안선을 찾는다."""
+    if island_type_filter == "uninhabited":
+        return None
+
+    from nearest_island import find_nearest_island_wfs
+
+    features = _get_island_polygon_bundle()
+    if not features:
+        return None
+
+    if island_type_filter == "inhabited":
+        filtered = [
+            feature
+            for feature in features
+            if str((feature.get("properties") or {}).get("islnds_se_code", "")) == "1"
+        ]
+    else:
+        filtered = features
+
+    return find_nearest_island_wfs(filtered, lat, lng)
 
 
 def _find_nearest_island_from_bundle(lat: float, lng: float, island_type_filter: str) -> dict | None:
