@@ -11,14 +11,6 @@
 <body>
   <div class="app-shell">
     <aside class="panel">
-      <!-- 탭 바 -->
-      <div class="panel-tabs">
-        <button type="button" class="panel-tab active" id="panel-tab-btn-input" onclick="switchPanelTab('input')">입력</button>
-        <button type="button" class="panel-tab" id="panel-tab-btn-report" onclick="switchPanelTab('report')">보고서</button>
-      </div>
-
-      <!-- 입력 탭 -->
-      <div class="panel-tab-content active" id="panel-tab-input">
       <div class="panel-header">
         <p class="eyebrow">Marine Incident Demo</p>
         <h1>해양사고 상황보고 데모</h1>
@@ -156,80 +148,6 @@
 
       </form><!-- /#search-form / .panel-body -->
       </div><!-- /.panel-body-wrap -->
-      </div><!-- /#panel-tab-input -->
-
-      <!-- 보고서 탭 -->
-      <div class="panel-tab-content" id="panel-tab-report">
-        <section id="report-preview-overlay" class="report-preview hidden">
-          <div class="report-preview-actions">
-            <button id="copy-report-button" type="button" class="copy-button">보고서 문구 복사</button>
-            <button id="copy-sms-button" type="button" class="copy-button sms-button">보고서→문자</button>
-          </div>
-          <article class="report-paper">
-            <header class="report-header">
-              <h2 id="report-title">[선박명 사고유형] 사고 보고</h2>
-              <div class="report-meta">
-                <div>기준 일시 : <span id="preview-report-datetime">-</span></div>
-                <div>보고 센터 : <span id="preview-report-center">-</span></div>
-              </div>
-            </header>
-            <section class="report-section">
-              <h3>사고개요</h3>
-              <div class="report-box">
-                <p id="preview-accident-summary">위치 계산과 사고 정보를 입력하면 사고개요가 생성됩니다.</p>
-              </div>
-              <p class="report-footnote">* 현지기상 : <span id="preview-weather">-</span></p>
-            </section>
-            <section class="report-section">
-              <h3>선박제원</h3>
-              <table class="report-table">
-                <tbody>
-                  <tr>
-                    <th>선명</th>
-                    <td id="preview-vessel-name">-</td>
-                    <th>총톤수</th>
-                    <td id="preview-gross-tonnage">-</td>
-                    <th>선종</th>
-                    <td id="preview-vessel-type">-</td>
-                    <th>소유자 또는 선박회사</th>
-                    <td id="preview-owner-name">-</td>
-                  </tr>
-                  <tr>
-                    <th>선박번호</th>
-                    <td id="preview-vessel-number">-</td>
-                    <th>차량/화물</th>
-                    <td id="preview-cargo-type">-</td>
-                    <th>선적항</th>
-                    <td id="preview-registry-port">-</td>
-                    <th>국적 / 검사기관</th>
-                    <td><span id="preview-nationality">-</span> / <span id="preview-inspection-agency">-</span></td>
-                  </tr>
-                </tbody>
-              </table>
-              <p class="report-footnote">* 승선 현황 : <span id="preview-persons-onboard">-</span></p>
-              <p class="report-footnote">* 보험 현황 : <span id="preview-insurance-status">-</span></p>
-            </section>
-            <section class="report-section">
-              <h3>피해사항</h3>
-              <ul class="report-bullets">
-                <li>사고종류 : <span id="preview-accident-type">-</span></li>
-                <li>인명 : <span id="preview-human-damage">-</span></li>
-                <li>오염 : <span id="preview-pollution-damage">-</span></li>
-                <li>선박·시설물 등 : <span id="preview-ship-damage">-</span></li>
-                <li>지연시간 : <span id="preview-delay-time">-</span></li>
-                <li>사고 추정원인 : <span id="preview-suspected-cause">-</span></li>
-              </ul>
-            </section>
-            <section class="report-section">
-              <h3>조치사항</h3>
-              <div class="report-box">
-                <p id="preview-accident-details">-</p>
-              </div>
-            </section>
-          </article>
-        </section>
-      </div><!-- /#panel-tab-report -->
-
     </aside>
 
     <main class="map-area">
@@ -525,6 +443,83 @@
               <dd id="result-kcg-branch-distance">-</dd>
             </div>
           </dl>
+        </section>
+
+        <section id="report-preview-overlay" class="report-preview hidden collapsed">
+          <div class="report-preview-actions">
+            <button id="toggle-report-button" type="button" class="toggle-report-button" aria-expanded="false" title="보고서 펼치기">
+              <span class="toggle-report-label">보고서 펼치기</span>
+              <span class="toggle-report-icon">▲</span>
+            </button>
+            <button id="copy-report-button" type="button" class="copy-button">보고서 문구 복사</button>
+            <button id="copy-sms-button" type="button" class="copy-button sms-button">보고서→문자</button>
+          </div>
+          <article class="report-paper">
+            <header class="report-header">
+              <h2 id="report-title">[선박명 사고유형] 사고 보고</h2>
+              <div class="report-meta">
+                <div>기준 일시 : <span id="preview-report-datetime">-</span></div>
+                <div>보고 센터 : <span id="preview-report-center">-</span></div>
+              </div>
+            </header>
+
+            <section class="report-section">
+              <h3>사고개요</h3>
+              <div class="report-box">
+                <p id="preview-accident-summary">위치 계산과 사고 정보를 입력하면 사고개요가 생성됩니다.</p>
+              </div>
+              <p class="report-footnote">* 현지기상 : <span id="preview-weather">-</span></p>
+            </section>
+
+            <section class="report-section">
+              <h3>선박제원</h3>
+              <table class="report-table">
+                <tbody>
+                  <tr>
+                    <th>선명</th>
+                    <td id="preview-vessel-name">-</td>
+                    <th>총톤수</th>
+                    <td id="preview-gross-tonnage">-</td>
+                    <th>선종</th>
+                    <td id="preview-vessel-type">-</td>
+                    <th>소유자 또는 선박회사</th>
+                    <td id="preview-owner-name">-</td>
+                  </tr>
+                  <tr>
+                    <th>선박번호</th>
+                    <td id="preview-vessel-number">-</td>
+                    <th>차량/화물</th>
+                    <td id="preview-cargo-type">-</td>
+                    <th>선적항</th>
+                    <td id="preview-registry-port">-</td>
+                    <th>국적 / 검사기관</th>
+                    <td><span id="preview-nationality">-</span> / <span id="preview-inspection-agency">-</span></td>
+                  </tr>
+                </tbody>
+              </table>
+              <p class="report-footnote">* 승선 현황 : <span id="preview-persons-onboard">-</span></p>
+              <p class="report-footnote">* 보험 현황 : <span id="preview-insurance-status">-</span></p>
+            </section>
+
+            <section class="report-section">
+              <h3>피해사항</h3>
+              <ul class="report-bullets">
+                <li>사고종류 : <span id="preview-accident-type">-</span></li>
+                <li>인명 : <span id="preview-human-damage">-</span></li>
+                <li>오염 : <span id="preview-pollution-damage">-</span></li>
+                <li>선박·시설물 등 : <span id="preview-ship-damage">-</span></li>
+                <li>지연시간 : <span id="preview-delay-time">-</span></li>
+                <li>사고 추정원인 : <span id="preview-suspected-cause">-</span></li>
+              </ul>
+            </section>
+
+            <section class="report-section">
+              <h3>조치사항</h3>
+              <div class="report-box">
+                <p id="preview-accident-details">-</p>
+              </div>
+            </section>
+          </article>
         </section>
 
       </div>

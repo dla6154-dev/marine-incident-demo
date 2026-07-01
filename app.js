@@ -1,14 +1,5 @@
 let _liveVesselItems = []; // [{label, key}] — 선언을 최상단에 둬야 bootstrapVesselData 이전에 참조 가능
 
-window.switchPanelTab = function(name) {
-  document.querySelectorAll(".panel-tab").forEach(btn => {
-    btn.classList.toggle("active", btn.id === `panel-tab-btn-${name}`);
-  });
-  document.querySelectorAll(".panel-tab-content").forEach(el => {
-    el.classList.toggle("active", el.id === `panel-tab-${name}`);
-  });
-};
-
 const DEFAULT_CENTER = [126.9784, 37.5665];
 const SAMPLE_COORDINATES = { lat: 34.099686, lng: 125.116658 };
 const SEARCH_RESULT_ZOOM = 11;
@@ -337,7 +328,7 @@ const previewNearestHospitalDist     = document.getElementById("preview-nearest-
 const copyReportButton = document.getElementById("copy-report-button");
 const copySmsButton = document.getElementById("copy-sms-button");
 const sampleReportButton = document.getElementById("sample-report-button");
-const toggleReportButton = document.getElementById("toggle-report-button"); // null in new tab layout
+const toggleReportButton = document.getElementById("toggle-report-button");
 
 const VESSEL_INPUTS = {
   vesselName: vesselNameInput,
@@ -1892,8 +1883,6 @@ function updateReportPreview() {
 
   reportPreviewOverlay.classList.remove("hidden");
   if (emergencyCardsOverlay) emergencyCardsOverlay.classList.remove("hidden");
-  // 계산 완료 시 보고서 탭으로 자동 전환
-  switchPanelTab("report");
 
   const islandDistEl = document.getElementById("island-dist-value");
   const islandDistCard = document.getElementById("island-dist-card");

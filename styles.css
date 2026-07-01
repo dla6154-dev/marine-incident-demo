@@ -129,67 +129,6 @@ body.panel-resizing * { cursor: ns-resize !important; }
 
 .panel-toggle-btn.panel-collapsed .toggle-chevron { transform: rotate(180deg); }
 
-/* 패널 탭 바 */
-.panel-tabs {
-  display: flex;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
-  flex-shrink: 0;
-  padding: 0 24px;
-}
-
-.panel-tab {
-  padding: 8px 20px;
-  font-size: 13px;
-  font-weight: 500;
-  color: rgba(255,255,255,0.45);
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-}
-
-.panel-tab.active {
-  color: #1db6a4;
-  border-bottom-color: #1db6a4;
-}
-
-.panel-tab:hover:not(.active) {
-  color: rgba(255,255,255,0.75);
-}
-
-/* 탭 콘텐츠 */
-.panel-tab-content {
-  display: none;
-  overflow-y: auto;
-}
-
-.panel-tab-content.active {
-  display: block;
-}
-
-/* 보고서 탭 내 report-preview */
-#panel-tab-report .report-preview {
-  position: static;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 10px 24px 14px;
-  background: #f4f9fb;
-  overflow-y: auto;
-}
-
-#panel-tab-report .report-preview.hidden {
-  display: none !important;
-}
-
-#panel-tab-report .report-preview-actions {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
-  flex-shrink: 0;
-}
-
 /* 사고발생 시각 강조 */
 .accent-field input {
   border-color: rgba(231, 76, 60, 0.6) !important;
